@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LibreRAM</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="hero">
+    <div class="crumbs">LibreRAM&nbsp;&nbsp;/&nbsp;&nbsp;Управление дисками</div>
+    <h1>RAM-диски</h1>
+    <p class="sub">Управляйте временными дисками в памяти</p>
+  </header>
+
+  <main>
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Мои диски</h2>
+          <p class="muted" id="summary">Загрузка…</p>
+        </div>
+        <div class="toolbar">
+          <button id="btn-open" class="btn" disabled><span class="ico">📂</span>Открыть</button>
+          <button id="btn-props" class="btn" disabled><span class="ico">🧾</span>Свойства</button>
+          <button id="btn-label" class="btn" disabled><span class="ico">🏷️</span>Метка</button>
+          <button id="btn-refresh" class="btn"><span class="ico">🔄</span>Обновить</button>
+          <button id="btn-create" class="btn primary"><span class="ico">＋</span>Создать диск</button>
+        </div>
+      </div>
+
+      <table id="disks">
+        <thead>
+          <tr><th>Буква</th><th>Размер</th><th>Файловая система</th><th>Занято</th><th>Устройство ImDisk</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <div class="panel-foot">
+        <span class="muted" id="hint">Выберите диск, чтобы отключить его.</span>
+        <div class="toolbar">
+          <button id="btn-save" class="btn" disabled><span class="ico">💾</span>Сохранить образ</button>
+          <button id="btn-remove" class="btn" disabled><span class="ico">✖</span>Отключить диск</button>
+        </div>
+      </div>
+    </section>
+    <p class="status" id="status"></p>
+  </main>
+
+  <dialog id="create-dialog">
+    <h3>Новый RAM-диск</h3>
+    <p class="muted" id="create-memory">Укажите параметры для создания диска</p>
+    <form id="create-form">
+      <label>Буква диска<select id="c-letter"></select></label>
+      <label>Размер, МиБ<input id="c-size" type="number" min="1" max="1048576" value="1024" /></label>
+      <div class="row">
+        <label>Файловая система<select id="c-fs"><option>NTFS</option><option>FAT32</option><option>exFAT</option></select></label>
+        <label>Кластер, байт<select id="c-cluster"><option>Авто</option><option>512</option><option>1024</option><option>2048</option><option>4096</option><option>8192</option><option>16384</option><option>32768</option><option>65536</option></select></label>
+      </div>
+      <div class="row">
+        <label>Метка тома<input id="c-label" /></label>
+        <label>Папки через запятую<input id="c-folders" /></label>
+      </div>
+      <label>Файл образа · необязательно<input id="c-image" placeholder="Путь к .img" /></label>
+      <label class="check"><input type="checkbox" id="c-persistent" /> Восстанавливать диск из образа при запуске Windows</label>
+      <label class="check"><input type="checkbox" id="c-auto" checked /> Запускать приложение и создавать чистый диск при входе</label>
+      <p class="muted small">Образ загружается в память. Изменения автоматически не сохраняются.</p>
+      <div class="actions">
+        <button type="button" class="btn" id="c-cancel">Отмена</button>
+        <button type="submit" class="btn primary">Создать диск</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="session-dialog">
+    <h3>Диск при входе</h3>
+    <form id="session-form">
+      <label>Буква<select id="s-letter"></select></label>
+      <label>Размер, МиБ<input id="s-size" type="number" min="1" max="1048576" /></label>
+      <div class="row">
+        <label>Файловая система<select id="s-fs"><option>NTFS</option><option>FAT32</option><option>exFAT</option></select></label>
+        <label>Кластер, байт<select id="s-cluster"><option>Авто</option><option>512</option><option>1024</option><option>2048</option><option>4096</option><option>8192</option><option>16384</option><option>32768</option><option>65536</option></select></label>
+      </div>
+      <div class="row">
+        <label>Метка тома<input id="s-label" /></label>
+        <label>Папки через запятую<input id="s-folders" /></label>
+      </div>
+      <p class="muted small">Текущий диск не изменится. Параметры применятся при следующем входе.</p>
+      <div class="actions">
+        <button type="button" class="btn" id="s-cancel">Отмена</button>
+        <button type="submit" class="btn primary">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="label-dialog">
+    <h3>Метка тома</h3>
+    <p class="muted small" id="label-hint">Укажите метку. Пустое поле удалит её.<br/>Для диска при входе измените также сохранённые параметры.</p>
+    <form id="label-form">
+      <label>Метка<input id="l-value" /></label>
+      <div class="actions">
+        <button type="button" class="btn" id="l-cancel">Отмена</button>
+        <button type="submit" class="btn primary">Применить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

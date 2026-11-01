@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LibreRAM",
+  "version": "0.3.0",
+  "mainBinaryName": "LibreRAM",
+  "identifier": "org.libreram.app",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "LibreRAM",
+        "width": 920,
+        "height": 600,
+        "minWidth": 760,
+        "minHeight": 520,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi"],
+    "icon": ["icons/icon.ico", "icons/128x128.png"],
+    "resources": ["resources/imdisk-setup/*"],
+    "windows": {
+      "wix": {
+        "language": "ru-RU",
+        "upgradeCode": "AF941449-1944-4FF5-B02C-75D2CB1E59AB"
+      }
+    }
+  }
+}
