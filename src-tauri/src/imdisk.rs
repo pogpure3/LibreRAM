@@ -143,6 +143,7 @@ pub fn persistent_image(unit: u32) -> Option<String> {
 }
 
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateRequest {
     pub letter: String,
     pub size_mib: u64,

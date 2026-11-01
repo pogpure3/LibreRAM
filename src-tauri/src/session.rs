@@ -10,8 +10,11 @@ const TASK_NAME: &str = "LibreRAM-Session";
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SessionConfig {
     pub letter: String,
+    // session.json keeps Python-compatible snake_case; the UI sends camelCase.
+    #[serde(default, alias = "sizeMib")]
     pub size_mib: u64,
     pub filesystem: String,
+    #[serde(default, alias = "allocationSize")]
     pub allocation_size: u32,
     pub folders: Vec<String>,
     #[serde(default)]
