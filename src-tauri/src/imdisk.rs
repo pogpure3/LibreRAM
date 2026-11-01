@@ -34,7 +34,7 @@ struct Output {
 }
 
 /// Decode console output: CP866 Cyrillic on a ru-RU system, ASCII otherwise.
-fn decode(bytes: &[u8]) -> String {
+pub(crate) fn decode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| match b {
         0x80..=0xAF => char::from_u32(0x0410 + (b - 0x80) as u32).unwrap_or('?'),
         0xE0..=0xEF => char::from_u32(0x0440 + (b - 0xE0) as u32).unwrap_or('?'),

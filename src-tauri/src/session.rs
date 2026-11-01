@@ -107,7 +107,14 @@ if ($task) {
     $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     $principalSid = ([Security.Principal.NTAccount]::new($task.Principal.UserId)).Translate([Security.Principal.SecurityIdentifier]).Value
     $triggerSid = if (@($task.Triggers).Count -eq 1 -and $task.Triggers[0].UserId) { ([Security.Principal.NTAccount]::new($task.Triggers[0].UserId)).Translate([Security.Principal.SecurityIdentifier]).Value } else { '' }
-    if (@($task.Actions).Count -ne 1 -or $task.Actions[0].Execute -ine $p.exe -or $task.Principal.RunLevel -ne 'Highest' -or $task.Principal.LogonType -ne 'Interactive' -or $principalSid -ne $sid -or $triggerSid -ne $sid) {
+    $sameExe = @($task.Actions).Count -eq 1 -and $task.Actions[0].Execute -ieq $p.exe
+    $libreRamTask = @($task.Actions).Count -ge 1 -and $task.Actions[0].Execute -like '*LibreRAM*'
+    if (-not $sameExe -and -not ($libreRamTask -and $principalSid -eq $sid -and $task.Principal.LogonType -eq 'Interactive')) {
+        throw 'A different scheduled task uses this name.'
+    }
+    # Task from another LibreRAM install (e.g. the Python one): replace it.
+    if (-not $sameExe) { Unregister-ScheduledTask -TaskName $p.name -TaskPath '\' -Confirm:$false; $task = $null }
+    elseif ($task.Principal.RunLevel -ne 'Highest' -or $triggerSid -ne $sid) {
         throw 'A different scheduled task uses this name.'
     }
 }
@@ -139,9 +146,8 @@ fn run_powershell(encoded: &str) -> Result<(), String> {
     if output.status.success() {
         return Ok(());
     }
-    let stderr = String::from_utf16_lossy(
-        &output.stderr.as_chunks::<2>().0.iter().map(|p| u16::from_le_bytes([p[0], p[1]])).collect::<Vec<_>>(),
-    );
+    // PowerShell console stderr follows the OEM code page, not UTF-16.
+    let stderr = crate::imdisk::decode(&output.stderr);
     Err(format!("Не удалось изменить задачу автозапуска Windows: {}", stderr.trim()))
 }
 

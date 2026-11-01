@@ -9,7 +9,7 @@ mod volume;
 
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem};
-use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Serialize)]
@@ -182,6 +182,8 @@ fn main() {
             let tray = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&tray_menu)
+                // Context menu belongs to right click; left click shows the window.
+                .menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => {
                         if let Some(window) = app.get_webview_window("main") {
@@ -193,7 +195,7 @@ fn main() {
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if matches!(event, TrayIconEvent::Click { .. }) {
+                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
