@@ -3,6 +3,7 @@
 //! Keeps the session.json format of the Python version.
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 
 const TASK_NAME: &str = "LibreRAM-Session";
@@ -141,6 +142,7 @@ fn run_powershell(encoded: &str) -> Result<(), String> {
         .join(r"System32\WindowsPowerShell\v1.0\powershell.exe");
     let output = std::process::Command::new(powershell)
         .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW: no console flash
         .output()
         .map_err(|e| e.to_string())?;
     if output.status.success() {

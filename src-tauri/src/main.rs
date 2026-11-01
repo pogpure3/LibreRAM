@@ -8,6 +8,7 @@ mod session;
 mod volume;
 
 use serde::Serialize;
+use std::os::windows::process::CommandExt;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager};
@@ -150,6 +151,7 @@ fn install_imdisk(app: AppHandle) -> Result<(), String> {
     let output = std::process::Command::new("cmd")
         .args(["/c", "set IMDISK_SILENT_SETUP=1&& call install.cmd"])
         .current_dir(&setup)
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW: no console flash
         .output()
         .map_err(|e| e.to_string())?;
     if output.status.success() && imdisk::imdisk_path().is_ok() {
