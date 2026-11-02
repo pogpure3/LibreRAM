@@ -25,13 +25,30 @@ struct DiskRow {
     persistent: bool,
 }
 
+/// ImDisk prints "Size: 1073741824 bytes (1 GB), Virtual Memory, HDD." —
+/// keep only the bracketed value, localized ("1 ГБ").
+fn imdisk_size_label(description: &str) -> String {
+    let line = description.lines().find(|l| l.contains("Size:")).unwrap_or("");
+    match (line.find('('), line.find(')')) {
+        (Some(start), Some(end)) if end > start => {
+            let value = &line[start + 1..end];
+            value
+                .replace("TB", "ТБ")
+                .replace("GB", "ГБ")
+                .replace("MB", "МБ")
+                .replace("KB", "КБ")
+        }
+        _ => line.trim().to_string(),
+    }
+}
+
 #[tauri::command]
 fn list_disks() -> Result<Vec<DiskRow>, String> {
     let rows = imdisk::disks()?
         .into_iter()
         .map(|disk| {
             let info = volume::volume_info(&disk.letter);
-            let kind = disk.description.lines().last().unwrap_or("").to_string();
+            let kind = imdisk_size_label(&disk.description);
             let persistent = imdisk::persistent_image(disk.unit).is_some();
             DiskRow {
                 unit: disk.unit,
@@ -238,4 +255,15 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running LibreRAM");
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn size_label_takes_bracketed_value() {
+        let description = "Parameter name: Type\r\nDrive letter: R\r\n\r\nSize: 1073741824 bytes (1 GB), Virtual Memory, HDD, Modified.";
+        assert_eq!(super::imdisk_size_label(description), "1 ГБ");
+        assert_eq!(super::imdisk_size_label("Size: 67108864 bytes (64 MB), Virtual Memory, HDD."), "64 МБ");
+        assert_eq!(super::imdisk_size_label("Size: 1152921504606846976 bytes (1 TB), VM."), "1 ТБ");
+    }
 }
