@@ -268,3 +268,18 @@ document.addEventListener("keydown", (event) => {
 window.__TAURI__.event.listen("session-error", (event) => alert("Создание диска при входе: " + event.payload));
 
 ensureImDisk().then(refresh);
+
+$("tab-settings").addEventListener("click", (event) => {
+  event.currentTarget.blur();
+  sessionDialog();
+});
+$("tab-help").addEventListener("click", (event) => {
+  event.currentTarget.blur();
+  alert(
+    "LibreRAM 0.3.0 (Tauri)\n\n" +
+    "Управляйте RAM-дисками через ImDisk.\n\n" +
+    "Двойной клик по строке — свойства диска.\n" +
+    "Ctrl+, — параметры диска при входе.\n\n" +
+    "Данные RAM-диска теряются при отключении и выключении компьютера.",
+  );
+});

@@ -7,11 +7,11 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="hero">
-    <div class="crumbs">LibreRAM&nbsp;&nbsp;/&nbsp;&nbsp;Управление дисками</div>
-    <h1>RAM-диски</h1>
-    <p class="sub">Управляйте временными дисками в памяти</p>
-  </header>
+  <nav class="tabs">
+    <button class="tab active" id="tab-disks">Диски</button>
+    <button class="tab" id="tab-settings">Настройки</button>
+    <button class="tab tab-help" id="tab-help" title="Справка">?</button>
+  </nav>
 
   <main>
     <section class="panel">
@@ -40,7 +40,7 @@
         <span class="muted" id="hint">Выберите диск, чтобы отключить его.</span>
         <div class="toolbar">
           <button id="btn-save" class="btn" disabled><span class="ico">💾</span>Сохранить образ</button>
-          <button id="btn-remove" class="btn" disabled><span class="ico">✖</span>Отключить диск</button>
+          <button id="btn-remove" class="btn danger" disabled><span class="ico">✖</span>Отключить диск</button>
         </div>
       </div>
     </section>
