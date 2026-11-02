@@ -30,23 +30,29 @@
 
 * { box-sizing: border-box; }
 
+html, body { height: 100%; }
+
 body {
   margin: 0;
   font-family: "Segoe UI", sans-serif;
   font-size: 13px;
   color: var(--text);
   background: var(--bg);
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* Навбар — сегмент-контрол как в Mesh_Client */
 .tabs {
   display: flex;
+  align-items: center;
   gap: 2px;
   background: var(--seg-track);
   border-radius: 980px;
   padding: 3px;
   margin: 10px 14px 8px;
+  flex: none;
 }
 .tab {
   background: transparent;
@@ -68,9 +74,20 @@ body {
   font-weight: 590;
   box-shadow: 0 1px 3px rgba(0, 0, 0, .18), 0 2px 7px rgba(0, 0, 0, .1);
 }
-.tab-help { margin-left: auto; padding: 6px 12px; font-size: 13px; align-self: center; }
+.navbtn { padding: 6px 12px; color: var(--body); }
+.navbtn:disabled { opacity: .45; cursor: default; }
+.navbtn.primary {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 590;
+}
+.navbtn.primary:hover { background: var(--accent-hover); }
+.navsep { width: 1px; height: 18px; background: var(--border-strong); margin: 0 6px; flex: none; }
+.tab-help { margin-left: auto; padding: 6px 12px; font-size: 13px; }
 
-main { padding: 0 14px 14px; }
+main { flex: 1; min-height: 0; overflow-y: auto; padding: 0 14px 14px; display: flex; flex-direction: column; }
+main .panel { flex: 1; display: flex; flex-direction: column; }
+main .panel table { flex: 1; }
 
 .panel {
   background: var(--bg-elev);
