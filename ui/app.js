@@ -64,7 +64,7 @@ async function openDisk() {
   if (!disk) return;
   if (disk.letter === "—") return alert("У диска нет буквы.");
   try {
-    await invoke("plugin:shell|open", { path: disk.letter + "\\" });
+    await invoke("open_path", { path: disk.letter + "\\" });
   } catch (error) {
     alert("Ошибка открытия диска: " + error);
   }

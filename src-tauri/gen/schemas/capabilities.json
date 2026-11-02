@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Main window permissions","local":true,"windows":["main"],"permissions":["core:default",{"identifier":"shell:allow-open","allow":[{"url":".*"}]}]}}
+{"default":{"identifier":"default","description":"Main window permissions","local":true,"windows":["main"],"permissions":["core:default"]}}

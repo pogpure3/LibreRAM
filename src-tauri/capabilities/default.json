@@ -3,11 +3,5 @@
   "identifier": "default",
   "description": "Main window permissions",
   "windows": ["main"],
-  "permissions": [
-    "core:default",
-    {
-      "identifier": "shell:allow-open",
-      "allow": [{ "url": ".*" }]
-    }
-  ]
+  "permissions": ["core:default"]
 }

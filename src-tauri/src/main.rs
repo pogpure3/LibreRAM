@@ -154,6 +154,23 @@ fn session_disable() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_path(path: String) -> Result<(), String> {
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    let file = crate::volume::wide(&path);
+    // SAFETY: ShellExecuteW only reads the NUL-terminated path.
+    let result = unsafe {
+        ShellExecuteW(None, PCWSTR::null(), PCWSTR(file.as_ptr()), PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL)
+    };
+    if result.0 as usize > 32 {
+        Ok(())
+    } else {
+        Err(format!("Не удалось открыть {}.", path))
+    }
+}
+
+#[tauri::command]
 fn imdisk_present() -> bool {
     imdisk::imdisk_path().is_ok()
 }
@@ -193,11 +210,10 @@ fn main() {
                 let _ = window.set_focus();
             }
         }))
-        .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![
+                .invoke_handler(tauri::generate_handler![
             list_disks, memory_info, free_letters, create_disk, remove_disk, disk_properties,
             change_label, save_image, session_load, session_enable, session_disable,
-            imdisk_present, install_imdisk,
+            imdisk_present, install_imdisk, open_path,
         ])
         .setup(move |app| {
             let window = app.get_webview_window("main").unwrap();
