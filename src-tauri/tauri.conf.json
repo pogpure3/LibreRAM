@@ -12,8 +12,8 @@
     "windows": [
       {
         "title": "LibreRAM",
-        "width": 920,
-        "height": 600,
+        "width": 760,
+        "height": 520,
         "minWidth": 760,
         "minHeight": 520,
         "center": true
@@ -25,9 +25,16 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi"],
-    "icon": ["icons/icon.ico", "icons/128x128.png"],
-    "resources": ["resources/imdisk-setup/*"],
+    "targets": [
+      "msi"
+    ],
+    "icon": [
+      "icons/icon.ico",
+      "icons/128x128.png"
+    ],
+    "resources": [
+      "resources/imdisk-setup/*"
+    ],
     "windows": {
       "wix": {
         "language": "ru-RU",
