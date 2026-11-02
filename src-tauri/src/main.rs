@@ -145,11 +145,12 @@ fn imdisk_present() -> bool {
 fn install_imdisk(app: AppHandle) -> Result<(), String> {
     let resources = app.path().resource_dir().map_err(|e| e.to_string())?;
     let setup = resources.join("resources/imdisk-setup");
-    if !setup.join("install.cmd").is_file() {
+    let script = setup.join("install-libreram.cmd");
+    if !script.is_file() {
         return Err("Установочные файлы ImDisk не найдены в пакете.".into());
     }
     let output = std::process::Command::new("cmd")
-        .args(["/c", "set IMDISK_SILENT_SETUP=1&& call install.cmd"])
+        .args(["/c", "call", "install-libreram.cmd"])
         .current_dir(&setup)
         .creation_flags(0x08000000) // CREATE_NO_WINDOW: no console flash
         .output()
@@ -157,7 +158,12 @@ fn install_imdisk(app: AppHandle) -> Result<(), String> {
     if output.status.success() && imdisk::imdisk_path().is_ok() {
         return Ok(());
     }
-    Err("Установка ImDisk не завершилась. Запустите install.cmd из каталога imdisk-setup вручную.".into())
+    // Surface the script's own failure line instead of a generic message.
+    let text = imdisk::decode(&output.stdout);
+    Err(format!(
+        "Установка ImDisk не завершилась. {}",
+        text.lines().last().unwrap_or("Запустите install-libreram.cmd вручную.")
+    ))
 }
 
 fn main() {
