@@ -28,11 +28,25 @@ function selectRow(row, disk) {
 }
 
 // Shared message/confirm/prompt layer: themed <dialog> instead of blocking alert().
-function message(title, text, buttons = [{ label: "OK", value: true, primary: true }], input = null) {
+function message(title, text, buttons = [{ label: "OK", value: true, primary: true }], input = null, rows = null) {
   return new Promise((resolve) => {
     const dialog = $("msg-dialog");
     $("msg-title").textContent = title;
-    $("msg-text").textContent = text;
+    const textNode = $("msg-text");
+    const rowsNode = $("msg-rows");
+    textNode.hidden = !text;
+    textNode.textContent = text || "";
+    rowsNode.replaceChildren();
+    rowsNode.hidden = !rows;
+    if (rows) {
+      for (const [key, value] of rows) {
+        const dt = document.createElement("dt");
+        dt.textContent = key;
+        const dd = document.createElement("dd");
+        dd.textContent = value;
+        rowsNode.append(dt, dd);
+      }
+    }
     const field = $("msg-input");
     if (input) {
       field.hidden = false;
@@ -60,6 +74,7 @@ function message(title, text, buttons = [{ label: "OK", value: true, primary: tr
 }
 
 const showMessage = (title, text) => message(title, text);
+const showRows = (title, rows) => message(title, null, undefined, null, rows);
 const showConfirm = (title, text) => message(title, text, [
   { label: "Отмена", value: null },
   { label: "OK", value: true, primary: true },
@@ -105,6 +120,7 @@ async function refresh() {
       table.appendChild(row);
       if (disk.unit === keepUnit) selectRow(row, disk);
     }
+    $("table-empty").hidden = disks.length > 0;
     selected = null;
     selectionButtons();
     const memoryText = memory ? `  ·  RAM: ${(memory.avail_bytes / 2 ** 30).toFixed(1)} из ${(memory.total_bytes / 2 ** 30).toFixed(1)} ГиБ свободно` : "";
@@ -133,12 +149,15 @@ async function properties() {
   if (!disk) return;
   try {
     const info = await invoke("disk_properties", { unit: disk.unit });
-    showMessage(
-      `Свойства · ${info.letter}`,
-      `Размер: ${(info.size / 1024 ** 2).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} МиБ\n` +
-      `Файловая система: ${info.filesystem}\nКластер: ${info.cluster}\nЗанято: ${info.usage}\n` +
-      `Автозапуск ImDisk: ${info.persistent ? "да" : "нет"}\n\n${info.description}`,
-    );
+    showRows(`Свойства · ${info.letter}`, [
+      ["Буква", info.letter],
+      ["Размер", `${(info.size / 1024 ** 2).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} МиБ`],
+      ["Файловая система", info.filesystem],
+      ["Кластер", info.cluster],
+      ["Занято", info.usage],
+      ["Автозапуск ImDisk", info.persistent ? "да" : "нет"],
+      ["Устройство", info.description],
+    ]);
   } catch (error) {
     showMessage("Ошибка", String(error));
     refresh();
@@ -158,12 +177,16 @@ async function saveImage() {
   const disk = selected;
   if (!disk || saving) return;
   if (disk.letter === "—") return showMessage("Сохранение образа", "Для сохранения нужна буква диска.");
-  const path = await message("Сохранить образ", "Полный путь к файлу образа (.img):", [
-    { label: "Отмена", value: null },
-    { label: "Сохранить", value: "ok", primary: true },
-  ], { value: "", placeholder: "D:\\backup\\ram.img" });
+  const path = await message(
+    "Сохранить образ",
+    "Том будет заблокирован на время копирования; файлы на диске нужно закрыть.",
+    [
+      { label: "Отмена", value: null },
+      { label: "Сохранить", value: "ok", primary: true },
+    ],
+    { value: "", placeholder: "D:\\backup\\ram.img" },
+  );
   if (!path) return;
-  if (!(await showConfirm("Сохранение образа", "Том будет заблокирован на время копирования. Продолжить?"))) return;
   saving = true;
   selectionButtons();
   setStatus("Сохранение образа…");
@@ -242,6 +265,7 @@ async function submitCreate(event) {
       sessionAuto: $("c-auto").checked,
     });
     $("create-dialog").close();
+    setStatus(`Диск ${$("c-letter").value} создан.`);
     refresh();
   } catch (error) {
     showMessage("Ошибка создания диска", String(error));
@@ -328,6 +352,9 @@ $("l-cancel").addEventListener("click", () => $("label-dialog").close());
 // Settings menu entry, minimal for parity: Ctrl+, opens the session dialog.
 document.addEventListener("keydown", (event) => {
   if (event.key === "," && (event.ctrlKey || event.metaKey)) sessionDialog();
+  if (document.querySelector("dialog[open]")) return;
+  if (event.key === "F5") { event.preventDefault(); refresh(); }
+  if (event.key === "Delete" && selected) removeDisk();
 });
 
 window.__TAURI__.event.listen("session-error", (event) => showMessage("Создание диска при входе", String(event.payload)));

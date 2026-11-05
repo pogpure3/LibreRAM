@@ -145,7 +145,8 @@ td.dim { color: var(--muted); }
   padding: 8px 17px;
 }
 .btn.primary:hover:not(:disabled) { background: var(--accent-hover); }
-.btn.danger:hover:not(:disabled) { color: #d70015; background: var(--surface-hover); }
+.btn.danger:not(:disabled) { color: #d70015; }
+.btn.danger:hover:not(:disabled) { background: var(--surface-hover); }
 
 .panel-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 10px; }
 
@@ -188,3 +189,9 @@ tbody tr:focus-visible td { box-shadow: var(--ring); }
   .tab, .btn, dialog input, dialog select { transition: none; }
   .btn:active:not(:disabled) { transform: none; }
 }
+
+.empty { text-align: center; padding: 34px 10px; color: var(--muted); }
+.empty-icon { font-size: 30px; margin-bottom: 6px; }
+#msg-rows { margin: 4px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; user-select: text; max-height: 40vh; overflow-y: auto; }
+#msg-rows dt { color: var(--muted); }
+#msg-rows dd { margin: 0; word-break: break-word; }
