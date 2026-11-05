@@ -335,7 +335,7 @@ window.__TAURI__.event.listen("session-error", (event) => showMessage("Созд�
 ensureImDisk().then(refresh);
 
 $("tab-settings").addEventListener("click", () => sessionDialog());
-$("tab-help").addEventListener("click", () => showMessage("LibreRAM 0.3.0 (Tauri)",
+$("tab-help").addEventListener("click", () => showMessage("LibreRAM 0.3.1 (Tauri)",
   "Управляйте RAM-дисками через ImDisk.\n\n" +
   "Клик по строке — выбор диска; двойной клик — свойства.\n" +
   "Клавиатура: Tab к таблице, стрелки и Enter — выбор, Ctrl+, — параметры входа.\n\n" +
