@@ -11,11 +11,11 @@
     <button class="tab active" id="tab-disks" aria-current="true">Диски</button>
     <button class="tab" id="tab-settings" aria-haspopup="dialog">Настройки</button>
     <span class="navsep"></span>
-    <button id="btn-open" class="tab navbtn" disabled><span class="ico" aria-hidden="true">📂</span>Открыть</button>
-    <button id="btn-props" class="tab navbtn" disabled><span class="ico" aria-hidden="true">🧾</span>Свойства</button>
-    <button id="btn-label" class="tab navbtn" disabled aria-haspopup="dialog"><span class="ico" aria-hidden="true">🏷️</span>Метка</button>
-    <button id="btn-refresh" class="tab navbtn"><span class="ico" aria-hidden="true">🔄</span>Обновить</button>
-    <button id="btn-create" class="tab navbtn primary"><span class="ico" aria-hidden="true">＋</span>Создать диск</button>
+    <button id="btn-open" class="tab navbtn" disabled><span class="ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span>Открыть</button>
+    <button id="btn-props" class="tab navbtn" disabled><span class="ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></span>Свойства</button>
+    <button id="btn-label" class="tab navbtn" disabled aria-haspopup="dialog"><span class="ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg></span>Метка</button>
+    <button id="btn-refresh" class="tab navbtn"><span class="ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></span>Обновить</button>
+    <button id="btn-create" class="tab navbtn primary"><span class="ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span>Создать диск</button>
     <button class="tab tab-help" id="tab-help" aria-label="Справка" aria-haspopup="dialog">?</button>
   </nav>
 
@@ -30,7 +30,9 @@
 
       <div class="tablewrap">
       <div class="empty" id="table-empty" hidden>
-        <div class="empty-icon" aria-hidden="true">💿</div>
+        <div class="empty-icon" aria-hidden="true">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="2"/><path d="M6 12c0-1.7.8-3.2 2-4.2"/></svg>
+        </div>
         <p>Нет подключённых RAM-дисков.<br/>Нажмите «Создать диск», чтобы начать.</p>
       </div>
       <table id="disks" aria-labelledby="disks-title">
@@ -44,8 +46,8 @@
       <div class="panel-foot">
         <span class="muted" id="hint">Выберите диск, чтобы отключить его.</span>
         <div class="toolbar">
-          <button id="btn-save" class="btn" disabled><span class="ico" aria-hidden="true">💾</span>Сохранить образ</button>
-          <button id="btn-remove" class="btn danger" disabled><span class="ico" aria-hidden="true">✖</span>Отключить диск</button>
+          <button id="btn-save" class="btn" disabled><span class="ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg></span>Сохранить образ</button>
+          <button id="btn-remove" class="btn danger" disabled><span class="ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>Отключить диск</button>
         </div>
       </div>
     </section>
@@ -55,6 +57,7 @@
   <dialog id="msg-dialog" aria-labelledby="msg-title" aria-describedby="msg-text">
     <h3 id="msg-title"></h3>
     <p id="msg-text" class="msg-text"></p>
+    <dl id="msg-rows" hidden></dl>
     <input id="msg-input" hidden />
     <div class="actions" id="msg-actions"></div>
   </dialog>
