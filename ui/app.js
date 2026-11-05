@@ -16,13 +16,66 @@ function selectionButtons() {
   }
 }
 
+function selectRow(row, disk) {
+  table.querySelectorAll(".selected").forEach((r) => {
+    r.classList.remove("selected");
+    r.setAttribute("aria-checked", "false");
+  });
+  row.classList.add("selected");
+  row.setAttribute("aria-checked", "true");
+  selected = disk;
+  selectionButtons();
+}
+
+// Shared message/confirm/prompt layer: themed <dialog> instead of blocking alert().
+function message(title, text, buttons = [{ label: "OK", value: true, primary: true }], input = null) {
+  return new Promise((resolve) => {
+    const dialog = $("msg-dialog");
+    $("msg-title").textContent = title;
+    $("msg-text").textContent = text;
+    const field = $("msg-input");
+    if (input) {
+      field.hidden = false;
+      field.value = input.value || "";
+      field.placeholder = input.placeholder || "";
+    } else {
+      field.hidden = true;
+      field.value = "";
+    }
+    const actions = $("msg-actions");
+    actions.replaceChildren();
+    for (const spec of buttons) {
+      const button = document.createElement("button");
+      button.className = "btn" + (spec.primary ? " primary" : "");
+      button.textContent = spec.label;
+      button.addEventListener("click", () => {
+        dialog.close(input ? field.value.trim() : spec.value);
+      });
+      actions.appendChild(button);
+    }
+    dialog.addEventListener("close", () => resolve(dialog.returnValue), { once: true });
+    dialog.showModal();
+    (input ? field : actions.querySelector("button")).focus();
+  });
+}
+
+const showMessage = (title, text) => message(title, text);
+const showConfirm = (title, text) => message(title, text, [
+  { label: "Отмена", value: null },
+  { label: "OK", value: true, primary: true },
+]);
+
 async function refresh() {
   try {
     const [disks, memory] = await Promise.all([invoke("list_disks"), invoke("memory_info")]);
+    const keepUnit = selected ? selected.unit : null;
     table.replaceChildren();
     for (const disk of disks) {
       const row = document.createElement("tr");
       row.dataset.unit = disk.unit;
+      row.tabIndex = 0;
+      row.setAttribute("role", "radio");
+      row.setAttribute("aria-checked", "false");
       const cells = [
         [disk.letter, false],
         [disk.size_text, false],
@@ -36,14 +89,21 @@ async function refresh() {
         if (dim) td.className = "dim";
         row.appendChild(td);
       }
-      row.addEventListener("click", () => {
-        table.querySelectorAll(".selected").forEach((r) => r.classList.remove("selected"));
-        row.classList.add("selected");
-        selected = disk;
-        selectionButtons();
+      row.addEventListener("click", () => selectRow(row, disk));
+      row.addEventListener("dblclick", () => { selectRow(row, disk); properties(); });
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          selectRow(row, disk);
+        } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const rows = [...table.children];
+          const next = rows[rows.indexOf(row) + (event.key === "ArrowDown" ? 1 : -1)];
+          if (next) { next.focus(); next.click(); }
+        }
       });
-      row.addEventListener("dblclick", () => { selected = disk; properties(); });
       table.appendChild(row);
+      if (disk.unit === keepUnit) selectRow(row, disk);
     }
     selected = null;
     selectionButtons();
@@ -57,51 +117,53 @@ async function refresh() {
   }
 }
 
-function selectedRow() { return selected; }
-
 async function openDisk() {
-  const disk = selectedRow();
+  const disk = selected;
   if (!disk) return;
-  if (disk.letter === "—") return alert("У диска нет буквы.");
+  if (disk.letter === "—") return showMessage("Открытие диска", "У диска нет буквы.");
   try {
     await invoke("open_path", { path: disk.letter + "\\" });
   } catch (error) {
-    alert("Ошибка открытия диска: " + error);
+    showMessage("Ошибка открытия диска", String(error));
   }
 }
 
 async function properties() {
-  const disk = selectedRow();
+  const disk = selected;
   if (!disk) return;
   try {
     const info = await invoke("disk_properties", { unit: disk.unit });
-    alert(
-      `Буква: ${info.letter}\nРазмер: ${(info.size / 1024 ** 2).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} МиБ\n` +
+    showMessage(
+      `Свойства · ${info.letter}`,
+      `Размер: ${(info.size / 1024 ** 2).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} МиБ\n` +
       `Файловая система: ${info.filesystem}\nКластер: ${info.cluster}\nЗанято: ${info.usage}\n` +
       `Автозапуск ImDisk: ${info.persistent ? "да" : "нет"}\n\n${info.description}`,
     );
   } catch (error) {
-    alert(error);
+    showMessage("Ошибка", String(error));
     refresh();
   }
 }
 
 function changeLabel() {
-  const disk = selectedRow();
+  const disk = selected;
   if (!disk) return;
-  if (disk.letter === "—") return alert("У диска нет буквы.");
+  if (disk.letter === "—") return showMessage("Метка тома", "У диска нет буквы.");
   $("l-value").value = "";
   $("label-form").dataset.letter = disk.letter;
   $("label-dialog").showModal();
 }
 
 async function saveImage() {
-  const disk = selectedRow();
+  const disk = selected;
   if (!disk || saving) return;
-  if (disk.letter === "—") return alert("Для сохранения нужна буква диска.");
-  const path = prompt("Полный путь к файлу образа (.img):");
+  if (disk.letter === "—") return showMessage("Сохранение образа", "Для сохранения нужна буква диска.");
+  const path = await message("Сохранить образ", "Полный путь к файлу образа (.img):", [
+    { label: "Отмена", value: null },
+    { label: "Сохранить", value: "ok", primary: true },
+  ], { value: "", placeholder: "D:\\backup\\ram.img" });
   if (!path) return;
-  if (!confirm("Том будет заблокирован на время копирования. Продолжить?")) return;
+  if (!(await showConfirm("Сохранение образа", "Том будет заблокирован на время копирования. Продолжить?"))) return;
   saving = true;
   selectionButtons();
   setStatus("Сохранение образа…");
@@ -110,7 +172,7 @@ async function saveImage() {
     setStatus("Образ сохранён: " + path);
   } catch (error) {
     setStatus("Не удалось сохранить образ.");
-    alert(error);
+    showMessage("Ошибка сохранения", String(error));
   } finally {
     saving = false;
     selectionButtons();
@@ -118,28 +180,31 @@ async function saveImage() {
 }
 
 async function removeDisk() {
-  const disk = selectedRow();
+  const disk = selected;
   if (!disk || saving) return;
   let removePersistent = false;
-  if (disk.persistentHint) {
-    const answer = await confirmDialog(`${disk.letter}? Несохранённые данные будут потеряны.\n\nУдалить также настройку автозапуска?\nOK — удалить; «Отмена» — сохранить.`);
-    if (answer === null) return;
-    removePersistent = answer;
-  } else if (!confirm(`Удалить устройство ImDisk ${disk.unit} (${disk.letter})? Несохранённые данные будут потеряны.`)) {
-    return;
+  if (disk.persistent) {
+    const answer = await message(
+      "Отключение диска",
+      `${disk.letter}: несохранённые данные будут потеряны. Удалить также настройку автозапуска?`,
+      [
+        { label: "Отмена", value: null },
+        { label: "Удалить диск", value: false },
+        { label: "Удалить и автозапуск", value: true, primary: true },
+      ],
+    );
+    if (answer === null || answer === undefined || answer === "") return;
+    removePersistent = answer === true;
+  } else {
+    const answer = await showConfirm("Отключение диска", `Удалить устройство ImDisk ${disk.unit} (${disk.letter})? Несохранённые данные будут потеряны.`);
+    if (!answer) return;
   }
   try {
     await invoke("remove_disk", { unit: disk.unit, removePersistent });
   } catch (error) {
-    alert(error);
+    showMessage("Ошибка", String(error));
   }
   refresh();
-}
-
-async function confirmDialog(text) {
-  // Persistent removal has three outcomes; window.confirm only two.
-  const remove = confirm(text + "\n\nOK — удалить настройку автозапуска.");
-  return remove;
 }
 
 function fillLetters(select, extra) {
@@ -179,15 +244,16 @@ async function submitCreate(event) {
     $("create-dialog").close();
     refresh();
   } catch (error) {
-    alert(error);
+    showMessage("Ошибка создания диска", String(error));
     refresh();
   }
 }
 
 async function sessionDialog() {
+  if (document.querySelector("dialog[open]")) return;
   const config = await invoke("session_load");
   if (!config) {
-    alert("Сохранённых параметров пока нет. Создайте диск и включите запуск при входе.");
+    showMessage("Параметры автозапуска", "Сохранённых параметров пока нет. Создайте диск и включите запуск при входе.");
     createDialog();
     return;
   }
@@ -216,7 +282,7 @@ async function submitSession(event) {
     $("session-dialog").close();
     setStatus("Параметры сохранены и применятся при следующем входе.");
   } catch (error) {
-    alert(error);
+    showMessage("Параметры автозапуска", String(error));
   }
 }
 
@@ -228,19 +294,19 @@ async function submitLabel(event) {
     refresh();
     setStatus("Метка тома изменена. Сохранённые параметры диска при входе меняются отдельно.");
   } catch (error) {
-    alert(error);
+    showMessage("Метка тома", String(error));
   }
 }
 
 async function ensureImDisk() {
   if (await invoke("imdisk_present")) return;
-  if (!confirm("Не найден imdisk.exe. Установить драйвер ImDisk сейчас?")) return;
+  if (!(await showConfirm("ImDisk не найден", "Не найден imdisk.exe. Установить драйвер ImDisk сейчас?"))) return;
   setStatus("Установка ImDisk…");
   try {
     await invoke("install_imdisk");
     setStatus("ImDisk установлен.");
   } catch (error) {
-    alert(error);
+    showMessage("Установка ImDisk", String(error));
   }
   refresh();
 }
@@ -253,7 +319,6 @@ $("btn-label").addEventListener("click", changeLabel);
 $("btn-save").addEventListener("click", saveImage);
 $("btn-remove").addEventListener("click", removeDisk);
 $("create-form").addEventListener("submit", submitCreate);
-$("create-dialog").addEventListener("close", () => {});
 $("c-cancel").addEventListener("click", () => $("create-dialog").close());
 $("session-form").addEventListener("submit", submitSession);
 $("s-cancel").addEventListener("click", () => $("session-dialog").close());
@@ -265,21 +330,13 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "," && (event.ctrlKey || event.metaKey)) sessionDialog();
 });
 
-window.__TAURI__.event.listen("session-error", (event) => alert("Создание диска при входе: " + event.payload));
+window.__TAURI__.event.listen("session-error", (event) => showMessage("Создание диска при входе", String(event.payload)));
 
 ensureImDisk().then(refresh);
 
-$("tab-settings").addEventListener("click", (event) => {
-  event.currentTarget.blur();
-  sessionDialog();
-});
-$("tab-help").addEventListener("click", (event) => {
-  event.currentTarget.blur();
-  alert(
-    "LibreRAM 0.3.0 (Tauri)\n\n" +
-    "Управляйте RAM-дисками через ImDisk.\n\n" +
-    "Двойной клик по строке — свойства диска.\n" +
-    "Ctrl+, — параметры диска при входе.\n\n" +
-    "Данные RAM-диска теряются при отключении и выключении компьютера.",
-  );
-});
+$("tab-settings").addEventListener("click", () => sessionDialog());
+$("tab-help").addEventListener("click", () => showMessage("LibreRAM 0.3.0 (Tauri)",
+  "Управляйте RAM-дисками через ImDisk.\n\n" +
+  "Клик по строке — выбор диска; двойной клик — свойства.\n" +
+  "Клавиатура: Tab к таблице, стрелки и Enter — выбор, Ctrl+, — параметры входа.\n\n" +
+  "Данные RAM-диска теряются при отключении и выключении компьютера."));

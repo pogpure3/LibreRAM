@@ -79,7 +79,23 @@ pub fn disks() -> Result<Vec<Disk>, String> {
         .filter(|l| !l.is_empty())
         .map(|l| l.parse::<u32>().map_err(|_| format!("Неожиданный ответ ImDisk: {stdout}")))
         .collect::<Result<_, _>>()?;
-    units.iter().map(|u| parse_disk(*u)).collect()
+    let disks: Vec<Disk> = units
+        .iter()
+        .filter_map(|u| match parse_disk(*u) {
+            Ok(disk) => Some(disk),
+            Err(error) => {
+                session_log(&format!("Устройство {u} пропущено: {error}"));
+                None
+            }
+        })
+        .collect();
+    Ok(disks)
+}
+
+// Left a per-unit failure drop the whole list once; one vanished unit must
+// not blank the UI, so misses degrade into a log line instead.
+fn session_log(message: &str) {
+    crate::session::log_event(message)
 }
 
 fn parse_disk(unit: u32) -> Result<Disk, String> {
@@ -158,8 +174,8 @@ pub struct CreateRequest {
 
 pub fn create(request: &CreateRequest) -> Result<(), String> {
     validate_letter(&request.letter)?;
-    if request.size_mib == 0 {
-        return Err("Укажите букву диска и положительный размер в МиБ.".into());
+    if !(1..=1048576).contains(&request.size_mib) {
+        return Err("Размер диска должен составлять от 1 до 1 048 576 МиБ.".into());
     }
     if !matches!(request.filesystem.as_str(), "NTFS" | "FAT32" | "exFAT") {
         return Err("Неизвестная файловая система.".into());
@@ -187,7 +203,11 @@ pub fn create(request: &CreateRequest) -> Result<(), String> {
             if !path.is_file() {
                 return Err("Файл образа не найден.".into());
             }
-            if path.metadata().map_err(|e| e.to_string())?.len() > request.size_mib * 1024 * 1024 {
+            let disk_bytes = request
+                .size_mib
+                .checked_mul(1024 * 1024)
+                .ok_or("Слишком большой размер диска.".to_string())?;
+            if path.metadata().map_err(|e| e.to_string())?.len() > disk_bytes {
                 return Err("Размер образа превышает размер диска.".into());
             }
             args.push("-f".into());
@@ -210,7 +230,10 @@ pub fn create(request: &CreateRequest) -> Result<(), String> {
     let out = run(&refs)?;
     fail(&out, false)?;
     if request.persistent {
-        let expected = image.map(|p| std::path::absolute(p).unwrap_or_default().to_string_lossy().to_lowercase());
+        let expected = image
+            .map(|p| std::path::absolute(p).map_err(|e| e.to_string()))
+            .transpose()?
+            .map(|p| p.to_string_lossy().to_lowercase());
         let registered = disks()?
             .iter()
             .find(|d| d.letter == request.letter)

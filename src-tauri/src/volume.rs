@@ -118,7 +118,7 @@ pub fn validate_letter(letter: &str) -> Result<(), String> {
 
 pub fn validate_label(label: &str, filesystem: &str) -> Result<(), String> {
     let limit = if filesystem == "FAT32" { 11 } else { 32 };
-    if label.len() > limit || label.chars().any(|c| "<>:\"/\\|?*".contains(c) || (c as u32) < 0x20) {
+    if label.chars().count() > limit || label.chars().any(|c| "<>:\"/\\|?*".contains(c) || (c as u32) < 0x20) {
         return Err("Недопустимая метка тома.".into());
     }
     Ok(())
@@ -156,10 +156,10 @@ pub fn create_folders(letter: &str, folders: &[String]) -> Result<(), String> {
         let path = wide(&format!("{letter}\\{name}"));
         // SAFETY: path is a NUL-terminated UTF-16 buffer.
         let result = unsafe { windows::Win32::Storage::FileSystem::CreateDirectoryW(pcw(&path), None) };
-        if result.is_err() {
+        if let Err(error) = result {
             let exists = std::path::Path::new(&format!("{letter}\\{name}")).is_dir();
             if !exists {
-                return Err(format!("Диск создан, но папка {name} не создана: {}", result.unwrap_err()));
+                return Err(format!("Диск создан, но папка {name} не создана: {error}"));
             }
         }
     }
@@ -205,6 +205,7 @@ mod tests {
         let _ = taken;
         let letters = free_letters();
         assert!(letters.iter().all(|l| l.ends_with(':')));
-        assert_eq!(letters.len(), 26.min(letters.len()));
+        assert!(!letters.contains(&"C:".to_string()), "C: is occupied on every test machine");
+        assert!(letters.len() <= 25);
     }
 }

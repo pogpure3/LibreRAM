@@ -19,8 +19,15 @@ pub fn save_volume(letter: &str, size: u64, destination: &str) -> Result<(), Str
         return Err("Неверная буква диска или размер тома.".into());
     }
     let destination = std::path::PathBuf::from(destination);
-    let destination = destination.canonicalize().unwrap_or(destination);
-    if Some(letter.to_uppercase()) == destination.as_os_str().to_string_lossy().chars().take(2).collect::<String>().into() {
+    let drive_text = destination
+        .parent()
+        .and_then(|p| std::fs::canonicalize(p).ok())
+        .or_else(|| std::fs::canonicalize(&destination).ok())
+        .unwrap_or_else(|| destination.clone())
+        .to_string_lossy()
+        .to_uppercase();
+    let same = drive_text.starts_with(&format!(r"\\?\{letter}")) || drive_text.starts_with(letter);
+    if same {
         return Err("Нельзя сохранить образ на том же диске.".into());
     }
     if destination.exists() {
@@ -56,8 +63,12 @@ fn read_volume(handle: HANDLE, size: u64, destination: &std::path::Path) -> Resu
         return Err("Не удалось отключить том.".into());
     }
     let mut temporary = destination.to_path_buf();
-    temporary.set_file_name(format!(".libreram-{}.tmp", std::process::id()));
-    let mut file = std::fs::File::create(&temporary).map_err(|e| e.to_string())?;
+    // CREATE_NEW + random suffix: a planted junction cannot be truncated.
+    temporary.set_file_name(format!(".libreram-{}-{}.tmp", std::process::id(), std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().subsec_nanos()));
+    let mut file = std::fs::OpenOptions::new().write(true).create_new(true)
+        .open(&temporary)
+        .map_err(|e| format!("Не удалось создать временный файл: {e}"))?;
     let mut buffer = vec![0u8; BUFFER_SIZE];
     let mut remaining = size;
     while remaining > 0 {

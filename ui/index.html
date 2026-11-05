@@ -8,52 +8,59 @@
 </head>
 <body>
   <nav class="tabs">
-    <button class="tab active" id="tab-disks">Диски</button>
-    <button class="tab" id="tab-settings">Настройки</button>
+    <button class="tab active" id="tab-disks" aria-current="true">Диски</button>
+    <button class="tab" id="tab-settings" aria-haspopup="dialog">Настройки</button>
     <span class="navsep"></span>
-    <button id="btn-open" class="tab navbtn" disabled><span class="ico">📂</span>Открыть</button>
-    <button id="btn-props" class="tab navbtn" disabled><span class="ico">🧾</span>Свойства</button>
-    <button id="btn-label" class="tab navbtn" disabled><span class="ico">🏷️</span>Метка</button>
-    <button id="btn-refresh" class="tab navbtn"><span class="ico">🔄</span>Обновить</button>
-    <button id="btn-create" class="tab navbtn primary"><span class="ico">＋</span>Создать диск</button>
-    <button class="tab tab-help" id="tab-help" title="Справка">?</button>
+    <button id="btn-open" class="tab navbtn" disabled><span class="ico" aria-hidden="true">📂</span>Открыть</button>
+    <button id="btn-props" class="tab navbtn" disabled><span class="ico" aria-hidden="true">🧾</span>Свойства</button>
+    <button id="btn-label" class="tab navbtn" disabled aria-haspopup="dialog"><span class="ico" aria-hidden="true">🏷️</span>Метка</button>
+    <button id="btn-refresh" class="tab navbtn"><span class="ico" aria-hidden="true">🔄</span>Обновить</button>
+    <button id="btn-create" class="tab navbtn primary"><span class="ico" aria-hidden="true">＋</span>Создать диск</button>
+    <button class="tab tab-help" id="tab-help" aria-label="Справка" aria-haspopup="dialog">?</button>
   </nav>
 
   <main>
     <section class="panel">
       <div class="panel-head">
         <div>
-          <h2>Мои диски</h2>
+          <h2 id="disks-title">Мои диски</h2>
           <p class="muted" id="summary">Загрузка…</p>
         </div>
       </div>
 
       <div class="tablewrap">
-      <table id="disks">
+      <table id="disks" aria-labelledby="disks-title">
         <thead>
-          <tr><th>Буква</th><th>Размер</th><th>Файловая система</th><th>Занято</th><th>Размер</th></tr>
+          <tr><th scope="col">Буква</th><th scope="col">Размер</th><th scope="col">Файловая система</th><th scope="col">Занято</th><th scope="col">Объём ImDisk</th></tr>
         </thead>
-        <tbody></tbody>
+        <tbody role="radiogroup" aria-label="RAM-диски"></tbody>
       </table>
       </div>
 
       <div class="panel-foot">
         <span class="muted" id="hint">Выберите диск, чтобы отключить его.</span>
         <div class="toolbar">
-          <button id="btn-save" class="btn" disabled><span class="ico">💾</span>Сохранить образ</button>
-          <button id="btn-remove" class="btn danger" disabled><span class="ico">✖</span>Отключить диск</button>
+          <button id="btn-save" class="btn" disabled><span class="ico" aria-hidden="true">💾</span>Сохранить образ</button>
+          <button id="btn-remove" class="btn danger" disabled><span class="ico" aria-hidden="true">✖</span>Отключить диск</button>
         </div>
       </div>
     </section>
-    <p class="status" id="status"></p>
+    <p class="status" id="status" role="status"></p>
   </main>
 
-  <dialog id="create-dialog">
-    <h3>Новый RAM-диск</h3>
+  <dialog id="msg-dialog" aria-labelledby="msg-title" aria-describedby="msg-text">
+    <h3 id="msg-title"></h3>
+    <p id="msg-text" class="msg-text"></p>
+    <input id="msg-input" hidden />
+    <div class="actions" id="msg-actions"></div>
+  </dialog>
+
+  <dialog id="create-dialog" aria-labelledby="create-title" aria-describedby="create-memory">
+    <h3 id="create-title">Новый RAM-диск</h3>
     <p class="muted" id="create-memory">Укажите параметры для создания диска</p>
     <form id="create-form">
       <label>Буква диска<select id="c-letter"></select></label>
-      <label>Размер, МиБ<input id="c-size" type="number" min="1" max="1048576" value="1024" /></label>
+      <label>Размер, МиБ<input id="c-size" type="number" min="1" max="1048576" step="1" required value="1024" /></label>
       <div class="row">
         <label>Файловая система<select id="c-fs"><option>NTFS</option><option>FAT32</option><option>exFAT</option></select></label>
         <label>Кластер, байт<select id="c-cluster"><option>Авто</option><option>512</option><option>1024</option><option>2048</option><option>4096</option><option>8192</option><option>16384</option><option>32768</option><option>65536</option></select></label>
@@ -73,11 +80,11 @@
     </form>
   </dialog>
 
-  <dialog id="session-dialog">
-    <h3>Диск при входе</h3>
+  <dialog id="session-dialog" aria-labelledby="session-title" aria-describedby="session-hint">
+    <h3 id="session-title">Диск при входе</h3>
     <form id="session-form">
       <label>Буква<select id="s-letter"></select></label>
-      <label>Размер, МиБ<input id="s-size" type="number" min="1" max="1048576" /></label>
+      <label>Размер, МиБ<input id="s-size" type="number" min="1" max="1048576" step="1" required /></label>
       <div class="row">
         <label>Файловая система<select id="s-fs"><option>NTFS</option><option>FAT32</option><option>exFAT</option></select></label>
         <label>Кластер, байт<select id="s-cluster"><option>Авто</option><option>512</option><option>1024</option><option>2048</option><option>4096</option><option>8192</option><option>16384</option><option>32768</option><option>65536</option></select></label>
@@ -86,7 +93,7 @@
         <label>Метка тома<input id="s-label" /></label>
         <label>Папки через запятую<input id="s-folders" /></label>
       </div>
-      <p class="muted small">Текущий диск не изменится. Параметры применятся при следующем входе.</p>
+      <p class="muted small" id="session-hint">Текущий диск не изменится. Параметры применятся при следующем входе.</p>
       <div class="actions">
         <button type="button" class="btn" id="s-cancel">Отмена</button>
         <button type="submit" class="btn primary">Сохранить</button>
@@ -94,8 +101,8 @@
     </form>
   </dialog>
 
-  <dialog id="label-dialog">
-    <h3>Метка тома</h3>
+  <dialog id="label-dialog" aria-labelledby="label-title" aria-describedby="label-hint">
+    <h3 id="label-title">Метка тома</h3>
     <p class="muted small" id="label-hint">Укажите метку. Пустое поле удалит её.<br/>Для диска при входе измените также сохранённые параметры.</p>
     <form id="label-form">
       <label>Метка<input id="l-value" /></label>

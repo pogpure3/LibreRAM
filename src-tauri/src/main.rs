@@ -43,7 +43,7 @@ fn imdisk_size_label(description: &str) -> String {
 }
 
 #[tauri::command]
-fn list_disks() -> Result<Vec<DiskRow>, String> {
+async fn list_disks() -> Result<Vec<DiskRow>, String> {
     let rows = imdisk::disks()?
         .into_iter()
         .map(|disk| {
@@ -76,18 +76,21 @@ fn free_letters() -> Vec<String> {
 }
 
 #[tauri::command]
-fn create_disk(request: imdisk::CreateRequest, folders: String, label: String, session_auto: bool) -> Result<(), String> {
+async fn create_disk(request: imdisk::CreateRequest, folders: String, label: String, session_auto: bool) -> Result<(), String> {
     let folders = volume::parse_folders(&folders)?;
     let filesystem = request.filesystem.clone();
-    imdisk::create(&request)?;
-    if !label.is_empty() {
-        volume::set_label(&request.letter, &label)?;
+    if session_auto
+        && (request.image.as_deref().map(str::trim).filter(|s| !s.is_empty()).is_some() || request.persistent)
+    {
+        return Err("Для чистого диска при входе уберите образ и восстановление из образа.".into());
     }
-    volume::create_folders(&request.letter, &folders)?;
+    imdisk::create(&request)?;
+    let created = format!("Диск {} создан, но настройки не завершены: ", request.letter);
+    if !label.is_empty() {
+        volume::set_label(&request.letter, &label).map_err(|e| created.clone() + &e)?;
+    }
+    volume::create_folders(&request.letter, &folders).map_err(|e| created.clone() + &e)?;
     if session_auto {
-        if request.image.as_deref().map(str::trim).filter(|s| !s.is_empty()).is_some() || request.persistent {
-            return Err("Для чистого диска при входе уберите образ и восстановление из образа.".into());
-        }
         session::enable(&session::SessionConfig {
             letter: request.letter,
             size_mib: request.size_mib,
@@ -101,12 +104,12 @@ fn create_disk(request: imdisk::CreateRequest, folders: String, label: String, s
 }
 
 #[tauri::command]
-fn remove_disk(unit: u32, remove_persistent: bool) -> Result<(), String> {
+async fn remove_disk(unit: u32, remove_persistent: bool) -> Result<(), String> {
     imdisk::remove(unit, remove_persistent)
 }
 
 #[tauri::command]
-fn disk_properties(unit: u32) -> Result<serde_json::Value, String> {
+async fn disk_properties(unit: u32) -> Result<serde_json::Value, String> {
     let disk = imdisk::disks()?
         .into_iter()
         .find(|d| d.unit == unit)
@@ -130,7 +133,7 @@ fn change_label(letter: String, label: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn save_image(letter: String, size: u64, destination: String) -> Result<(), String> {
+async fn save_image(letter: String, size: u64, destination: String) -> Result<(), String> {
     save_image::save_volume(&letter, size, &destination)
 }
 
@@ -144,12 +147,12 @@ fn session_load() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn session_enable(config: session::SessionConfig) -> Result<(), String> {
+async fn session_enable(config: session::SessionConfig) -> Result<(), String> {
     session::enable(&config)
 }
 
 #[tauri::command]
-fn session_disable() -> Result<(), String> {
+async fn session_disable() -> Result<(), String> {
     session::disable()
 }
 
@@ -158,6 +161,12 @@ fn open_path(path: String) -> Result<(), String> {
     use windows::core::PCWSTR;
     use windows::Win32::UI::Shell::ShellExecuteW;
     use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    // Elevated process: only drive roots are a legitimate target for this UI.
+    let bytes = path.as_bytes();
+    let is_drive_root = bytes.len() == 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && matches!(bytes[2], b'\\' | b'/');
+    if !is_drive_root || !std::path::Path::new(&path).is_dir() {
+        return Err("Открывать можно только корень подключённого диска.".into());
+    }
     let file = crate::volume::wide(&path);
     // SAFETY: ShellExecuteW only reads the NUL-terminated path.
     let result = unsafe {
@@ -176,14 +185,16 @@ fn imdisk_present() -> bool {
 }
 
 #[tauri::command]
-fn install_imdisk(app: AppHandle) -> Result<(), String> {
+async fn install_imdisk(app: AppHandle) -> Result<(), String> {
     let resources = app.path().resource_dir().map_err(|e| e.to_string())?;
     let setup = resources.join("resources/imdisk-setup");
     let script = setup.join("install-libreram.cmd");
     if !script.is_file() {
         return Err("Установочные файлы ImDisk не найдены в пакете.".into());
     }
-    let output = std::process::Command::new("cmd")
+    let cmd = std::path::PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()))
+        .join(r"System32\cmd.exe");
+    let output = std::process::Command::new(cmd)
         .args(["/c", "call", "install-libreram.cmd"])
         .current_dir(&setup)
         .creation_flags(0x08000000) // CREATE_NO_WINDOW: no console flash
@@ -224,7 +235,7 @@ fn main() {
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&tray_menu)
                 // Context menu belongs to right click; left click shows the window.
-                .menu_on_left_click(false)
+                .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => {
                         if let Some(window) = app.get_webview_window("main") {

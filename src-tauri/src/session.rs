@@ -36,7 +36,11 @@ pub fn data_dir() -> PathBuf {
     if installed() {
         std::env::current_exe().unwrap().parent().unwrap().join("data")
     } else {
-        std::env::var("LOCALAPPDATA").map(PathBuf::from).unwrap().join("LibreRAM")
+        std::env::var("LOCALAPPDATA")
+            .or_else(|_| std::env::var("USERPROFILE").map(|p| format!("{p}\\AppData\\Local")))
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(r"C:\Users\Default\AppData\Local"))
+            .join("LibreRAM")
     }
 }
 
@@ -57,7 +61,7 @@ pub fn log_event(message: &str) {
         .create(true)
         .append(true)
         .open(dir.join("startup.log"))
-        .and_then(|mut f| std::io::Write::write_all(&mut f, format!("{stamp} {message}\n").as_bytes()));
+        .and_then(|mut f| std::io::Write::write_all(&mut f, format!("{stamp} {}\n", message.replace(['\r', '\n'], " ")).as_bytes()));
 }
 
 pub fn load() -> Result<SessionConfig, String> {
@@ -74,11 +78,22 @@ pub fn enable(config: &SessionConfig) -> Result<(), String> {
     crate::imdisk::validate_session_config(&value)?;
     let dir = data_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    // Task first: a failed registration must not leave a stale session.json.
+    scheduled_task("enable")?;
     let json = serde_json::to_string(config).map_err(|e| e.to_string())?;
-    let temporary = dir.join("session.json.tmp");
-    std::fs::write(&temporary, json.as_bytes()).map_err(|e| e.to_string())?;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos();
+    let temporary = dir.join(format!("session-{nanos}.tmp"));
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, json.as_bytes()))
+        .map_err(|e| e.to_string())?;
     std::fs::rename(&temporary, config_path()).map_err(|e| e.to_string())?;
-    scheduled_task("enable")
+    Ok(())
 }
 
 pub fn disable() -> Result<(), String> {
@@ -109,7 +124,7 @@ if ($task) {
     $principalSid = ([Security.Principal.NTAccount]::new($task.Principal.UserId)).Translate([Security.Principal.SecurityIdentifier]).Value
     $triggerSid = if (@($task.Triggers).Count -eq 1 -and $task.Triggers[0].UserId) { ([Security.Principal.NTAccount]::new($task.Triggers[0].UserId)).Translate([Security.Principal.SecurityIdentifier]).Value } else { '' }
     $sameExe = @($task.Actions).Count -eq 1 -and $task.Actions[0].Execute -ieq $p.exe
-    $libreRamTask = @($task.Actions).Count -ge 1 -and $task.Actions[0].Execute -like '*LibreRAM*'
+    $libreRamTask = @($task.Actions).Count -ge 1 -and $task.Actions[0].Execute -like ("$env:ProgramFiles\LibreRAM\*")
     if (-not $sameExe -and -not ($libreRamTask -and $principalSid -eq $sid -and $task.Principal.LogonType -eq 'Interactive')) {
         throw 'A different scheduled task uses this name.'
     }
@@ -172,6 +187,7 @@ pub fn restore() -> Result<(), String> {
         persistent: false,
         allocation_size: config.allocation_size,
     };
+    crate::imdisk::validate_session_config(&serde_json::to_value(&config).map_err(|e| e.to_string())?)?;
     crate::imdisk::create(&request)?;
     if !config.label.is_empty() {
         if let Err(e) = crate::volume::set_label(&config.letter, &config.label) {
