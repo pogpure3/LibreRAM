@@ -359,11 +359,46 @@ document.addEventListener("keydown", (event) => {
 
 window.__TAURI__.event.listen("session-error", (event) => showMessage("Создание диска при входе", String(event.payload)));
 
-ensureImDisk().then(refresh);
+ensureImDisk().then(refresh).then(checkUpdate);
+
+async function checkUpdate(manual = false) {
+  try {
+    const info = await invoke("check_update");
+    if (!info) {
+      if (manual) showMessage("Обновления", "У вас последняя версия LibreRAM.");
+      return;
+    }
+    const install = await message(
+      "Доступна новая версия",
+      `LibreRAM ${info.version} доступна для установки. Приложение закроется и запустит установщик; настройки и диски не пострадают.`,
+      [
+        { label: "Позже", value: null },
+        { label: "Скачать и установить", value: true, primary: true },
+      ],
+    );
+    if (!install) return;
+    setStatus("Загрузка обновления…");
+    await invoke("install_update", { url: info.msi_url });
+    setStatus("Установщик запущен.");
+  } catch (error) {
+    if (manual) showMessage("Обновления", String(error));
+    // silent on startup: no network / rate limit must not nag
+  }
+}
 
 $("tab-settings").addEventListener("click", () => sessionDialog());
-$("tab-help").addEventListener("click", () => showMessage("LibreRAM 0.3.1 (Tauri)",
-  "Управляйте RAM-дисками через ImDisk.\n\n" +
-  "Клик по строке — выбор диска; двойной клик — свойства.\n" +
-  "Клавиатура: Tab к таблице, стрелки и Enter — выбор, Ctrl+, — параметры входа.\n\n" +
-  "Данные RAM-диска теряются при отключении и выключении компьютера."));
+$("tab-help").addEventListener("click", async () => {
+  const check = await message(
+    "LibreRAM 0.3.1 (Tauri)",
+    "Управляйте RAM-дисками через ImDisk.\n\n" +
+    "Клик по строке — выбор диска; двойной клик — свойства.\n" +
+    "Клавиатура: Tab к таблице, стрелки и Enter — выбор, Ctrl+, — параметры входа.\n" +
+    "F5 — обновить список, Delete — отключить выбранный диск.\n\n" +
+    "Проверить обновления сейчас?",
+    [
+      { label: "Закрыть", value: null },
+      { label: "Проверить обновления", value: true, primary: true },
+    ],
+  );
+  if (check) checkUpdate(true);
+});

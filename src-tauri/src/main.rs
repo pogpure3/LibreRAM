@@ -5,6 +5,7 @@
 mod imdisk;
 mod save_image;
 mod session;
+mod update;
 mod volume;
 
 use serde::Serialize;
@@ -180,6 +181,28 @@ fn open_path(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn check_update() -> Result<Option<update::UpdateInfo>, String> {
+    update::check()
+}
+
+#[tauri::command]
+async fn install_update(url: String) -> Result<(), String> {
+    let msi = update::download_and_install(&url)?;
+    update::run_installer(&msi)?;
+    app_handle_exit();
+    Ok(())
+}
+
+// The upgrade replaces this binary; exit before msiexec touches it.
+fn app_handle_exit() {
+    if let Some(app) = TAURI_APP.get() {
+        app.exit(0);
+    }
+}
+
+pub static TAURI_APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+#[tauri::command]
 fn imdisk_present() -> bool {
     imdisk::imdisk_path().is_ok()
 }
@@ -224,9 +247,10 @@ fn main() {
                 .invoke_handler(tauri::generate_handler![
             list_disks, memory_info, free_letters, create_disk, remove_disk, disk_properties,
             change_label, save_image, session_load, session_enable, session_disable,
-            imdisk_present, install_imdisk, open_path,
+            imdisk_present, install_imdisk, open_path, check_update, install_update,
         ])
         .setup(move |app| {
+            let _ = TAURI_APP.set(app.handle().clone());
             let window = app.get_webview_window("main").unwrap();
             let open_item = MenuItem::with_id(app, "open", "Открыть LibreRAM", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
