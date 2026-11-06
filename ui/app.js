@@ -389,7 +389,7 @@ async function checkUpdate(manual = false) {
 $("tab-settings").addEventListener("click", () => sessionDialog());
 $("tab-help").addEventListener("click", async () => {
   const check = await message(
-    "LibreRAM 0.3.1 (Tauri)",
+    "LibreRAM 0.3.2 (Tauri)",
     "Управляйте RAM-дисками через ImDisk.\n\n" +
     "Клик по строке — выбор диска; двойной клик — свойства.\n" +
     "Клавиатура: Tab к таблице, стрелки и Enter — выбор, Ctrl+, — параметры входа.\n" +
