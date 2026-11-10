@@ -358,3 +358,9 @@ dialog::after {
   user-select: none;
 }
 dialog::after:hover { background: var(--surface-hover); color: var(--text); }
+
+.s-row.collapsed > *:not(legend) { display: none; }
+.s-row.collapsed { padding-bottom: 6px; cursor: pointer; }
+.s-row > legend { cursor: pointer; }
+.s-row > legend::after { content: "▾"; margin-left: 6px; color: var(--muted); font-size: 10px; }
+.s-row.collapsed > legend::after { content: "▸"; }
