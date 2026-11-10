@@ -339,3 +339,22 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top
 .s-row legend { font-size: 12px; font-weight: 590; color: var(--body); padding: 0 6px; }
 #s-list { display: flex; flex-direction: column; max-height: calc(100vh - 200px); overflow-y: auto; }
 .s-remove { align-self: flex-end; font-size: 12px; padding: 4px 10px; }
+
+/* Close X on every dialog: button-free, Esc/click both cancel */
+dialog { position: relative; }
+dialog::after {
+  content: "✕";
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 26px;
+  height: 26px;
+  line-height: 26px;
+  text-align: center;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+dialog::after:hover { background: var(--surface-hover); color: var(--text); }

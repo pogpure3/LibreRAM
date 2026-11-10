@@ -422,7 +422,7 @@ async function checkUpdate(manual = false) {
 $("tab-settings").addEventListener("click", () => sessionDialog());
 $("tab-help").addEventListener("click", async () => {
   const check = await message(
-    "LibreRAM 0.3.3 (Tauri)",
+    "LibreRAM 0.3.4 (Tauri)",
     "Управляйте RAM-дисками через ImDisk.\n\n" +
     "Клик по строке — выбор диска; двойной клик — свойства.\n" +
     "Клавиатура: Tab к таблице, стрелки и Enter — выбор, Ctrl+, — параметры входа.\n" +
@@ -435,3 +435,14 @@ $("tab-help").addEventListener("click", async () => {
   );
   if (check) checkUpdate(true);
 });
+
+// Pseudo-element ✕ can't take listeners; route corner clicks to cancel.
+for (const dialog of document.querySelectorAll("dialog")) {
+  dialog.addEventListener("click", (event) => {
+    const box = dialog.getBoundingClientRect();
+    const inCorner = event.clientX > box.right - 44 && event.clientY < box.top + 44;
+    if (inCorner && event.target === dialog) {
+      dialog.close(dialog.id === "msg-dialog" ? null : "");
+    }
+  });
+}
