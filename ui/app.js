@@ -275,34 +275,67 @@ async function submitCreate(event) {
 
 async function sessionDialog() {
   if (document.querySelector("dialog[open]")) return;
-  const config = await invoke("session_load");
-  if (!config) {
+  const disks = await invoke("session_load");
+  const list = $("s-list");
+  list.replaceChildren();
+  if (disks && disks.length) {
+    for (const disk of disks) addSessionRow(disk);
+  } else {
     showMessage("Параметры автозапуска", "Сохранённых параметров пока нет. Создайте диск и включите запуск при входе.");
     createDialog();
     return;
   }
-  fillLetters($("s-letter"), config.letter);
-  $("s-size").value = config.size_mib;
-  $("s-fs").value = config.filesystem;
-  $("s-cluster").value = config.allocation_size ? String(config.allocation_size) : "Авто";
-  $("s-label").value = config.label || "";
-  $("s-folders").value = (config.folders || []).join(", ");
   $("session-dialog").showModal();
 }
 
+// One fieldset per logon disk, cloned from the template.
+async function addSessionRow(disk) {
+  const row = $("s-row-template").content.firstElementChild.cloneNode(true);
+  const legend = row.querySelector("legend");
+  const select = row.querySelector(".s-letter");
+  const letters = await invoke("free_letters");
+  const options = [...new Set([...letters, disk?.letter].filter(Boolean))].sort();
+  select.replaceChildren(...options.map((l) => new Option(l, l)));
+  if (disk) {
+    select.value = disk.letter;
+    row.querySelector(".s-size").value = disk.size_mib;
+    row.querySelector(".s-fs").value = disk.filesystem;
+    row.querySelector(".s-cluster").value = disk.allocation_size ? String(disk.allocation_size) : "Авто";
+    row.querySelector(".s-label").value = disk.label || "";
+    row.querySelector(".s-folders").value = (disk.folders || []).join(", ");
+  } else {
+    select.value = letters[0];
+    row.querySelector(".s-size").value = 1024;
+  }
+  const retitle = () => { legend.textContent = `Диск ${select.value || ""}`; };
+  select.addEventListener("change", retitle);
+  retitle();
+  row.querySelector(".s-remove").addEventListener("click", () => {
+    row.remove();
+    if (!$("s-list").children.length) $("session-dialog").close();
+  });
+  $("s-list").appendChild(row);
+}
+
+$("s-add").addEventListener("click", () => addSessionRow(null));
+
 async function submitSession(event) {
   event.preventDefault();
+  const disks = [...$("s-list").children].map((row) => ({
+    letter: row.querySelector(".s-letter").value,
+    sizeMib: Number(row.querySelector(".s-size").value),
+    filesystem: row.querySelector(".s-fs").value,
+    allocationSize: row.querySelector(".s-cluster").value === "Авто" ? 0 : Number(row.querySelector(".s-cluster").value),
+    label: row.querySelector(".s-label").value.trim(),
+    folders: row.querySelector(".s-folders").value.split(",").map((s) => s.trim()).filter(Boolean),
+  }));
+  const letters = disks.map((d) => d.letter);
+  if (new Set(letters).size !== letters.length) {
+    showMessage("Параметры автозапуска", "Буквы дисков повторяются. Используйте разные буквы.");
+    return;
+  }
   try {
-    await invoke("session_enable", {
-      config: {
-        letter: $("s-letter").value,
-        sizeMib: Number($("s-size").value),
-        filesystem: $("s-fs").value,
-        allocationSize: $("s-cluster").value === "Авто" ? 0 : Number($("s-cluster").value),
-        label: $("s-label").value.trim(),
-        folders: $("s-folders").value.split(",").map((s) => s.trim()).filter(Boolean),
-      },
-    });
+    await invoke("session_enable", { disks });
     $("session-dialog").close();
     setStatus("Параметры сохранены и применятся при следующем входе.");
   } catch (error) {
@@ -389,7 +422,7 @@ async function checkUpdate(manual = false) {
 $("tab-settings").addEventListener("click", () => sessionDialog());
 $("tab-help").addEventListener("click", async () => {
   const check = await message(
-    "LibreRAM 0.3.2 (Tauri)",
+    "LibreRAM 0.3.3 (Tauri)",
     "Управляйте RAM-дисками через ImDisk.\n\n" +
     "Клик по строке — выбор диска; двойной клик — свойства.\n" +
     "Клавиатура: Tab к таблице, стрелки и Enter — выбор, Ctrl+, — параметры входа.\n" +

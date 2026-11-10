@@ -333,3 +333,9 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top
   .btn:active:not(:disabled) { transform: none; }
   dialog[open] { animation: none; }
 }
+
+/* Multi-disk logon editor */
+.s-row { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px 12px; margin: 0 0 10px; display: flex; flex-direction: column; gap: 7px; }
+.s-row legend { font-size: 12px; font-weight: 590; color: var(--body); padding: 0 6px; }
+#s-list { display: flex; flex-direction: column; max-height: calc(100vh - 200px); overflow-y: auto; }
+.s-remove { align-self: flex-end; font-size: 12px; padding: 4px 10px; }

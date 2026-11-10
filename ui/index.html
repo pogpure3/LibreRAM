@@ -88,25 +88,35 @@
   </dialog>
 
   <dialog id="session-dialog" aria-labelledby="session-title" aria-describedby="session-hint">
-    <h3 id="session-title">Диск при входе</h3>
+    <h3 id="session-title">Диски при входе</h3>
     <form id="session-form">
-      <label>Буква<select id="s-letter"></select></label>
-      <label>Размер, МиБ<input id="s-size" type="number" min="1" max="1048576" step="1" required /></label>
-      <div class="row">
-        <label>Файловая система<select id="s-fs"><option>NTFS</option><option>FAT32</option><option>exFAT</option></select></label>
-        <label>Кластер, байт<select id="s-cluster"><option>Авто</option><option>512</option><option>1024</option><option>2048</option><option>4096</option><option>8192</option><option>16384</option><option>32768</option><option>65536</option></select></label>
-      </div>
-      <div class="row">
-        <label>Метка тома<input id="s-label" /></label>
-        <label>Папки через запятую<input id="s-folders" /></label>
-      </div>
-      <p class="muted small" id="session-hint">Текущий диск не изменится. Параметры применятся при следующем входе.</p>
-      <div class="actions">
-        <button type="button" class="btn" id="s-cancel">Отмена</button>
-        <button type="submit" class="btn primary">Сохранить</button>
+      <div id="s-list"></div>
+      <div class="actions" style="justify-content: space-between;">
+        <button type="button" class="btn" id="s-add">＋ Добавить диск</button>
+        <span>
+          <button type="button" class="btn" id="s-cancel">Отмена</button>
+          <button type="submit" class="btn primary">Сохранить</button>
+        </span>
       </div>
     </form>
   </dialog>
+
+  <template id="s-row-template">
+    <fieldset class="s-row">
+      <legend></legend>
+      <label>Буква<select class="s-letter"></select></label>
+      <label>Размер, МиБ<input class="s-size" type="number" min="1" max="1048576" step="1" required /></label>
+      <div class="row">
+        <label>Файловая система<select class="s-fs"><option>NTFS</option><option>FAT32</option><option>exFAT</option></select></label>
+        <label>Кластер, байт<select class="s-cluster"><option>Авто</option><option>512</option><option>1024</option><option>2048</option><option>4096</option><option>8192</option><option>16384</option><option>32768</option><option>65536</option></select></label>
+      </div>
+      <div class="row">
+        <label>Метка тома<input class="s-label" /></label>
+        <label>Папки через запятую<input class="s-folders" /></label>
+      </div>
+      <button type="button" class="btn danger s-remove">Убрать</button>
+    </fieldset>
+  </template>
 
   <dialog id="label-dialog" aria-labelledby="label-title" aria-describedby="label-hint">
     <h3 id="label-title">Метка тома</h3>

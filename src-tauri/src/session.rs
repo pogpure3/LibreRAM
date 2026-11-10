@@ -22,6 +22,38 @@ pub struct SessionConfig {
     pub label: String,
 }
 
+/// session.json: {"disks": [...]} plus every logon disk. The old Python
+/// format was one flat config object — read it as a single-disk list.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SessionFile {
+    #[serde(default)]
+    pub disks: Vec<SessionConfig>,
+    #[serde(default)]
+    legacy: Option<SessionConfig>,
+}
+
+impl SessionFile {
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let file: SessionFile = serde_json::from_str(text).map_err(|e| format!("Неверный формат параметров автозапуска. {e}"))?;
+        if !file.disks.is_empty() {
+            return Ok(file);
+        }
+        // Either {"disks": []} or the legacy flat object (fields leaked into
+        // this struct as nulls). Re-parse as the old shape when a letter exists.
+        let value: serde_json::Value = serde_json::from_str(text).unwrap_or(serde_json::Value::Null);
+        if value.get("letter").is_some() {
+            let legacy: SessionConfig = serde_json::from_value(value)
+                .map_err(|e| format!("Неверный формат параметров автозапуска. {e}"))?;
+            return Ok(SessionFile { disks: vec![legacy], legacy: None });
+        }
+        Ok(file)
+    }
+
+    pub fn all(&self) -> &[SessionConfig] {
+        &self.disks
+    }
+}
+
 fn program_files() -> PathBuf {
     std::env::var("ProgramFiles").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from(r"C:\Program Files"))
 }
@@ -64,23 +96,29 @@ pub fn log_event(message: &str) {
         .and_then(|mut f| std::io::Write::write_all(&mut f, format!("{stamp} {}\n", message.replace(['\r', '\n'], " ")).as_bytes()));
 }
 
-pub fn load() -> Result<SessionConfig, String> {
+pub fn load() -> Result<SessionFile, String> {
     let path = config_path();
     if !path.is_file() {
         return Err("нет сохранённых параметров".into());
     }
     let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&text).map_err(|e| format!("Неверный формат параметров автозапуска. {e}"))
+    SessionFile::parse(&text)
 }
 
-pub fn enable(config: &SessionConfig) -> Result<(), String> {
-    let value = serde_json::to_value(config).map_err(|e| e.to_string())?;
-    crate::imdisk::validate_session_config(&value)?;
+pub fn enable(disks: &[SessionConfig]) -> Result<(), String> {
+    if disks.is_empty() {
+        return Err("Добавьте хотя бы один диск.".into());
+    }
+    for config in disks {
+        let value = serde_json::to_value(config).map_err(|e| e.to_string())?;
+        crate::imdisk::validate_session_config(&value)?;
+    }
+    let file = SessionFile { disks: disks.to_vec(), legacy: None };
     let dir = data_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     // Task first: a failed registration must not leave a stale session.json.
     scheduled_task("enable")?;
-    let json = serde_json::to_string(config).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string(&file).map_err(|e| e.to_string())?;
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -168,16 +206,30 @@ fn run_powershell(encoded: &str) -> Result<(), String> {
     Err(format!("Не удалось изменить задачу автозапуска Windows: {}", stderr.trim()))
 }
 
-/// Create the disk described by the saved config at logon.
+/// Create every configured disk at logon; one failure skips that disk only.
 pub fn restore() -> Result<(), String> {
-    let config = load().map_err(|e| {
+    let file = load().map_err(|e| {
         log_event(&format!("Ошибка чтения настроек: {e}"));
         e
     })?;
+    let mut errors = Vec::new();
+    for config in file.all() {
+        if let Err(error) = restore_one(config) {
+            log_event(&format!("Диск {}: {error}", config.letter));
+            errors.push(format!("{}: {error}", config.letter));
+        }
+    }
+    if errors.is_empty() {
+        log_event(&format!("Дисков создано: {}", file.all().len()));
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
+}
+
+fn restore_one(config: &SessionConfig) -> Result<(), String> {
     if std::path::Path::new(&format!("{}\\", config.letter)).exists() {
-        let message = format!("Буква {} занята. Существующий диск не изменён.", config.letter);
-        log_event(&message);
-        return Err(message);
+        return Err(format!("Буква {} занята. Существующий диск не изменён.", config.letter));
     }
     let request = crate::imdisk::CreateRequest {
         letter: config.letter.clone(),
@@ -187,7 +239,7 @@ pub fn restore() -> Result<(), String> {
         persistent: false,
         allocation_size: config.allocation_size,
     };
-    crate::imdisk::validate_session_config(&serde_json::to_value(&config).map_err(|e| e.to_string())?)?;
+    crate::imdisk::validate_session_config(&serde_json::to_value(config).map_err(|e| e.to_string())?)?;
     crate::imdisk::create(&request)?;
     if !config.label.is_empty() {
         if let Err(e) = crate::volume::set_label(&config.letter, &config.label) {
@@ -197,6 +249,31 @@ pub fn restore() -> Result<(), String> {
     if let Err(e) = crate::volume::create_folders(&config.letter, &config.folders) {
         log_event(&format!("Ошибка создания папок: {e}"));
     }
-    log_event("Диск создан");
+    log_event(&format!("Диск {} создан", config.letter));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_legacy_flat_config_as_single_disk() {
+        let file = SessionFile::parse(r#"{"letter":"O:","size_mib":1024,"filesystem":"NTFS","allocation_size":0,"folders":["Temp"],"label":"RAM"}"#).unwrap();
+        assert_eq!(file.all().len(), 1);
+        assert_eq!(file.all()[0].letter, "O:");
+    }
+
+    #[test]
+    fn parses_disk_list() {
+        let file = SessionFile::parse(r#"{"disks":[{"letter":"O:","size_mib":512,"filesystem":"NTFS","allocation_size":0,"folders":[],"label":""},{"letter":"P:","size_mib":256,"filesystem":"FAT32","allocation_size":0,"folders":[],"label":""}]}"#).unwrap();
+        assert_eq!(file.all().len(), 2);
+        assert_eq!(file.all()[1].letter, "P:");
+    }
+
+    #[test]
+    fn empty_list_stays_empty() {
+        let file = SessionFile::parse(r#"{"disks":[]}"#).unwrap();
+        assert!(file.all().is_empty());
+    }
 }

@@ -92,14 +92,19 @@ async fn create_disk(request: imdisk::CreateRequest, folders: String, label: Str
     }
     volume::create_folders(&request.letter, &folders).map_err(|e| created.clone() + &e)?;
     if session_auto {
-        session::enable(&session::SessionConfig {
+        // Append to the existing list; a second logon disk must not silently
+        // drop the first one.
+        let mut disks = session::load().map(|file| file.all().to_vec()).unwrap_or_default();
+        disks.retain(|disk| disk.letter != request.letter);
+        disks.push(session::SessionConfig {
             letter: request.letter,
             size_mib: request.size_mib,
             filesystem,
             allocation_size: request.allocation_size,
             folders,
             label,
-        })?;
+        });
+        session::enable(&disks)?;
     }
     Ok(())
 }
@@ -141,15 +146,15 @@ async fn save_image(letter: String, size: u64, destination: String) -> Result<()
 #[tauri::command]
 fn session_load() -> Result<serde_json::Value, String> {
     match session::load() {
-        Ok(config) => serde_json::to_value(config).map_err(|e| e.to_string()),
+        Ok(file) => serde_json::to_value(file.all()).map_err(|e| e.to_string()),
         Err(e) if e == "нет сохранённых параметров" => Ok(serde_json::json!(null)),
         Err(e) => Err(e),
     }
 }
 
 #[tauri::command]
-async fn session_enable(config: session::SessionConfig) -> Result<(), String> {
-    session::enable(&config)
+async fn session_enable(disks: Vec<session::SessionConfig>) -> Result<(), String> {
+    session::enable(&disks)
 }
 
 #[tauri::command]
