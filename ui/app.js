@@ -310,13 +310,20 @@ async function addSessionRow(disk) {
   const retitle = () => { legend.textContent = `Диск ${select.value || ""}`; };
   select.addEventListener("change", retitle);
   retitle();
+  // Saved disks start collapsed; a brand-new one opens expanded, on top.
+  if (disk) row.classList.add("collapsed");
   // Collapse to the legend bar; click the bar to expand again.
   legend.addEventListener("click", () => row.classList.toggle("collapsed"));
   row.querySelector(".s-remove").addEventListener("click", () => {
     row.remove();
     if (!$("s-list").children.length) $("session-dialog").close();
   });
-  $("s-list").appendChild(row);
+  if (disk) {
+    $("s-list").appendChild(row);
+  } else {
+    $("s-list").prepend(row);
+    row.scrollIntoView({ block: "nearest" });
+  }
 }
 
 $("s-add").addEventListener("click", () => addSessionRow(null));
@@ -424,7 +431,7 @@ async function checkUpdate(manual = false) {
 $("tab-settings").addEventListener("click", () => sessionDialog());
 $("tab-help").addEventListener("click", async () => {
   const check = await message(
-    "LibreRAM 0.3.5 (Tauri)",
+    "LibreRAM 0.3.6 (Tauri)",
     "Управляйте RAM-дисками через ImDisk.\n\n" +
     "Клик по строке — выбор диска; двойной клик — свойства.\n" +
     "Клавиатура: Tab к таблице, стрелки и Enter — выбор, Ctrl+, — параметры входа.\n" +
