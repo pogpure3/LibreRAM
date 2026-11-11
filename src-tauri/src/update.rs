@@ -86,16 +86,36 @@ pub fn download_and_install(url: &str) -> Result<std::path::PathBuf, String> {
     Ok(temp)
 }
 
-/// Launch msiexec detached; caller exits the app right after.
+/// Launch msiexec detached; after it finishes, the freshly installed exe starts.
+/// The app exits right after spawning, so the MajorUpgrade replaces files freely.
 pub fn run_installer(msi: &std::path::Path) -> Result<(), String> {
     let cmd = std::path::PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()))
         .join(r"System32\cmd.exe");
+    let target = relaunch_target();
+    let script = format!(
+        "start \"\" /wait msiexec /i \"{}\" /qb&& start \"\" \"{}\"",
+        msi.to_string_lossy(),
+        target.to_string_lossy(),
+    );
     std::process::Command::new(cmd)
-        .args(["/c", "start", "", "msiexec", "/i", msi.to_string_lossy().as_ref(), "/qb"])
+        .args(["/c", &script])
         .creation_flags(0x08000008) // CREATE_NO_WINDOW | CREATE_DETACHED
         .spawn()
         .map_err(|e| format!("Не удалось запустить установку: {e}"))?;
     Ok(())
+}
+
+/// Where the updated copy will live: same dir for an installed copy,
+/// Program Files\LibreRAM for portable ones (MSI's default INSTALLFOLDER).
+fn relaunch_target() -> std::path::PathBuf {
+    let exe = std::env::current_exe().ok();
+    if let Some(dir) = exe.as_ref().and_then(|e| e.parent()) {
+        if crate::session::installed() {
+            return dir.join("LibreRAM.exe");
+        }
+    }
+    let pf = std::env::var("ProgramFiles").unwrap_or_else(|_| r"C:\Program Files".into());
+    std::path::PathBuf::from(pf).join(r"LibreRAM\LibreRAM.exe")
 }
 
 #[cfg(test)]
