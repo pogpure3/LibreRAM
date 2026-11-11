@@ -98,13 +98,17 @@ async function refresh() {
         [disk.usage, true],
         [disk.kind, true],
       ];
-      for (const [value, dim] of cells) {
+      for (const [index, [value, dim]] of cells.entries()) {
         const td = document.createElement("td");
         td.textContent = value;
         if (dim) td.className = "dim";
+        if (index === 3) {
+          // Usage cell doubles as the fill indicator.
+          td.classList.add("usage");
+          td.style.setProperty("--p", (Math.min(100, parseInt(value) || 0)) / 100);
+        }
         row.appendChild(td);
       }
-      row.style.setProperty("--p", (Math.min(100, parseInt(disk.usage) || 0)) / 100);
       row.addEventListener("click", () => selectRow(row, disk));
       row.addEventListener("dblclick", () => { selectRow(row, disk); properties(); });
       row.addEventListener("keydown", (event) => {
@@ -446,7 +450,7 @@ async function checkUpdate(manual = false) {
 $("tab-settings").addEventListener("click", () => sessionDialog());
 $("tab-help").addEventListener("click", async () => {
   const check = await message(
-    "LibreRAM 0.3.9 (Tauri)",
+    "LibreRAM 0.3.10 (Tauri)",
     "Управляйте RAM-дисками через ImDisk.\n\n" +
     "Клик по строке — выбор диска; двойной клик — свойства.\n" +
     "Клавиатура: Tab к таблице, стрелки и Enter — выбор, Ctrl+, — параметры входа.\n" +
