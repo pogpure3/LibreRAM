@@ -9,6 +9,7 @@ NOTES="${2:?usage: release.sh <version> \"notes\"}"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 REPO=pogpure3/LibreRAM
 RELEASES="$ROOT/../releases"
+LOCAL="$ROOT/releases"   # always duplicate inside the project too
 
 cd "$ROOT"
 python - <<PY
@@ -41,6 +42,8 @@ gh run watch "$RUN" --repo "$REPO" --exit-status > /dev/null
 
 gh release edit "v$VERSION" -R "$REPO" --notes "$NOTES" > /dev/null
 gh release download "v$VERSION" -R "$REPO" -D "$RELEASES" --clobber
+mkdir -p "$LOCAL"
+cp -f "$RELEASES/LibreRAM-$VERSION-preview-x64-tauri.msi" "$RELEASES/LibreRAM-$VERSION-preview-x64-tauri.msi.sha256" "$LOCAL/"
 
 python - "$RELEASES" <<'PY'
 import re, sys
