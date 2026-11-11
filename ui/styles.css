@@ -171,22 +171,16 @@ td {
   transition: background var(--speed) ease, box-shadow var(--speed) ease;
 }
 tbody tr { cursor: pointer; height: 34px; position: relative; }
+tbody tr { clip-path: inset(0 round 999px); }
 tbody tr::before {
-  content: ""; position: absolute; inset: 0;
-  background: var(--bg-elev); border-radius: var(--radius-full);
-}
-tbody tr::after {
-  content: ""; position: absolute; left: 14px; right: 14px; bottom: 3px; height: 4px;
+  content: ""; position: absolute; inset: auto 14px 3px 14px; height: 4px;
   background: var(--panel3); border-radius: 3px;
 }
-tbody tr::before { z-index: 2; }
-td::after {
-  content: ""; display: none;
-}
-tbody tr .usage-bar {
-  position: absolute; left: 14px; bottom: 3px; height: 4px; max-width: calc(100% - 28px);
+tbody tr::after {
+  content: ""; position: absolute; left: 14px; bottom: 3px; height: 4px;
+  width: calc((100% - 28px) * var(--p, 0));
   background: linear-gradient(90deg, #4aa3ff, var(--accent));
-  border-radius: 3px; z-index: 3; pointer-events: none;
+  border-radius: 3px; pointer-events: none;
 }
 tbody tr td:first-child { border-radius: var(--radius-full) 0 0 var(--radius-full); box-shadow: inset 3px 0 0 var(--border-soft); }
 tbody tr td:last-child { border-radius: 0 var(--radius-full) var(--radius-full) 0; }
