@@ -166,10 +166,21 @@ th {
 }
 td {
   padding: 7px 12px;
-  background: var(--bg-elev);
+  position: relative;
+  z-index: 1;
   transition: background var(--speed) ease, box-shadow var(--speed) ease;
 }
-tbody tr { cursor: pointer; height: 34px; }
+tbody tr { cursor: pointer; height: 34px; position: relative; }
+tbody tr::before {
+  content: ""; position: absolute; inset: 0;
+  background: var(--bg-elev); border-radius: var(--radius-full);
+}
+tbody tr::after {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0;
+  width: var(--usage, 0%);
+  background: linear-gradient(90deg, rgba(0, 113, 227, .12), rgba(0, 113, 227, .28));
+  border-radius: var(--radius-full); pointer-events: none;
+}
 tbody tr td:first-child { border-radius: var(--radius-full) 0 0 var(--radius-full); box-shadow: inset 3px 0 0 var(--border-soft); }
 tbody tr td:last-child { border-radius: 0 var(--radius-full) var(--radius-full) 0; }
 tbody tr:hover td { background: rgba(0, 0, 0, .025); }

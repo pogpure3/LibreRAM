@@ -104,6 +104,7 @@ async function refresh() {
         if (dim) td.className = "dim";
         row.appendChild(td);
       }
+      row.style.setProperty("--usage", (parseInt(disk.usage) || 0) + "%");
       row.addEventListener("click", () => selectRow(row, disk));
       row.addEventListener("dblclick", () => { selectRow(row, disk); properties(); });
       row.addEventListener("keydown", (event) => {
@@ -250,6 +251,20 @@ function createDialog() {
 
 async function submitCreate(event) {
   event.preventDefault();
+  if ($("c-auto").checked) {
+    const saved = await invoke("session_load");
+    if ((saved || []).some((d) => d.letter === $("c-letter").value)) {
+      const overwrite = await message(
+        "Диск при входе",
+        `Настройки для диска ${$("c-letter").value} уже сохранены. Перезаписать их новыми?`,
+        [
+          { label: "Отмена", value: null },
+          { label: "Перезаписать", value: true, primary: true },
+        ],
+      );
+      if (!overwrite) return;
+    }
+  }
   try {
     await invoke("create_disk", {
       request: {
@@ -431,7 +446,7 @@ async function checkUpdate(manual = false) {
 $("tab-settings").addEventListener("click", () => sessionDialog());
 $("tab-help").addEventListener("click", async () => {
   const check = await message(
-    "LibreRAM 0.3.6 (Tauri)",
+    "LibreRAM 0.3.7 (Tauri)",
     "Управляйте RAM-дисками через ImDisk.\n\n" +
     "Клик по строке — выбор диска; двойной клик — свойства.\n" +
     "Клавиатура: Tab к таблице, стрелки и Enter — выбор, Ctrl+, — параметры входа.\n" +
