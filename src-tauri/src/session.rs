@@ -108,7 +108,10 @@ pub fn load() -> Result<SessionFile, String> {
 
 pub fn enable(disks: &[SessionConfig]) -> Result<(), String> {
     if disks.is_empty() {
-        return Err("Добавьте хотя бы один диск.".into());
+        // Empty save = no autostart at all: unregister, forget the config.
+        scheduled_task("disable")?;
+        let _ = std::fs::remove_file(config_path());
+        return Ok(());
     }
     for config in disks {
         let value = serde_json::to_value(config).map_err(|e| e.to_string())?;

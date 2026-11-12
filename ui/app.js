@@ -340,7 +340,12 @@ async function addSessionRow(disk) {
   legend.addEventListener("click", () => row.classList.toggle("collapsed"));
   row.querySelector(".s-remove").addEventListener("click", () => {
     row.remove();
-    if (!$("s-list").children.length) addSessionRow(null);
+    if (!$("s-list").children.length) {
+      const empty = document.createElement("p");
+      empty.className = "empty small";
+      empty.textContent = "Нет дисков для автоматического монтирования. Сохранение отключит автозапуск.";
+      $("s-list").appendChild(empty);
+    }
   });
   if (disk) {
     $("s-list").appendChild(row);
@@ -354,6 +359,12 @@ $("s-add").addEventListener("click", () => addSessionRow(null));
 
 async function submitSession(event) {
   event.preventDefault();
+  if ($("s-list").querySelector(".empty")) {
+    await invoke("session_enable", { disks: [] });
+    $("session-dialog").close();
+    setStatus("Дисков для автоматического монтирования нет — автозапуск отключён.");
+    return;
+  }
   const disks = [...$("s-list").children].map((row) => ({
     letter: row.querySelector(".s-letter").value,
     sizeMib: Number(row.querySelector(".s-size").value),
@@ -455,7 +466,7 @@ async function checkUpdate(manual = false) {
 $("tab-settings").addEventListener("click", () => sessionDialog());
 $("tab-help").addEventListener("click", async () => {
   const check = await message(
-    "LibreRAM 0.3.15 (Tauri)",
+    "LibreRAM 0.3.16 (Tauri)",
     "Управляйте RAM-дисками через ImDisk.\n\n" +
     "Клик по строке — выбор диска; двойной клик — свойства.\n" +
     "Клавиатура: Tab к таблице, стрелки и Enter — выбор, Ctrl+, — параметры входа.\n" +
