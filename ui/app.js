@@ -312,9 +312,13 @@ async function addSessionRow(disk) {
   const row = $("s-row-template").content.firstElementChild.cloneNode(true);
   const legend = row.querySelector("legend");
   const select = row.querySelector(".s-letter");
-  const letters = await invoke("free_letters");
-  const options = [...new Set([...letters, disk?.letter].filter(Boolean))].sort();
-  select.replaceChildren(...options.map((l) => new Option(l, l)));
+  const states = await invoke("letter_states");
+  const options = states.map((s) => {
+    const option = new Option(s.letter, s.letter);
+    option.disabled = s.blocked && s.letter !== disk?.letter;
+    return option;
+  });
+  select.replaceChildren(...options);
   if (disk) {
     select.value = disk.letter;
     row.querySelector(".s-size").value = disk.size_mib;
@@ -323,7 +327,8 @@ async function addSessionRow(disk) {
     row.querySelector(".s-label").value = disk.label || "";
     row.querySelector(".s-folders").value = (disk.folders || []).join(", ");
   } else {
-    select.value = letters[0];
+    const firstFree = options.find((o) => !o.disabled);
+    if (firstFree) select.value = firstFree.value;
     row.querySelector(".s-size").value = 1024;
   }
   const retitle = () => { legend.textContent = `Диск ${select.value || ""}`; };
@@ -335,7 +340,7 @@ async function addSessionRow(disk) {
   legend.addEventListener("click", () => row.classList.toggle("collapsed"));
   row.querySelector(".s-remove").addEventListener("click", () => {
     row.remove();
-    if (!$("s-list").children.length) $("session-dialog").close();
+    if (!$("s-list").children.length) addSessionRow(null);
   });
   if (disk) {
     $("s-list").appendChild(row);
@@ -450,7 +455,7 @@ async function checkUpdate(manual = false) {
 $("tab-settings").addEventListener("click", () => sessionDialog());
 $("tab-help").addEventListener("click", async () => {
   const check = await message(
-    "LibreRAM 0.3.12 (Tauri)",
+    "LibreRAM 0.3.13 (Tauri)",
     "Управляйте RAM-дисками через ImDisk.\n\n" +
     "Клик по строке — выбор диска; двойной клик — свойства.\n" +
     "Клавиатура: Tab к таблице, стрелки и Enter — выбор, Ctrl+, — параметры входа.\n" +

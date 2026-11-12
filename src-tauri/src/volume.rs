@@ -209,3 +209,55 @@ mod tests {
         assert!(letters.len() <= 25);
     }
 }
+
+#[derive(serde::Serialize)]
+pub struct LetterState {
+    pub letter: String,
+    pub blocked: bool,
+}
+
+/// Physical media classification for a DosDevice mapping.
+pub fn classify_device(mapping: &str) -> bool {
+    let upper = mapping.to_uppercase();
+    upper.contains("HARDDISKVOLUME") || upper.contains("CDROM") || upper.contains("FLOPPY")
+}
+
+/// Every letter A-Z with a blocked flag: physical media can't be configured
+/// as a logon RAM disk; free letters and ImDisk letters can.
+pub fn letter_states() -> Vec<LetterState> {
+    let mut result = Vec::new();
+    for letter in 'A'..='Z' {
+        let name = format!("{}:", letter);
+        let target = wide(&name);
+        let mut buffer = [0u16; 1024];
+        // SAFETY: buffer and size match; NUL-separated device names returned.
+        let len = unsafe {
+            windows::Win32::Storage::FileSystem::QueryDosDeviceW(
+                pcw(&target),
+                Some(&mut buffer),
+            )
+        };
+        let blocked = if len == 0 {
+            false // free letter
+        } else {
+            let mapping = string_from(&buffer[..(len as usize).min(buffer.len() - 1)]);
+            classify_device(&mapping)
+        };
+        result.push(LetterState { letter: name, blocked });
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests2 {
+    use super::classify_device;
+
+    #[test]
+    fn physical_blocked_others_selectable() {
+        assert!(classify_device(r"\Device\HarddiskVolume3"));
+        assert!(classify_device(r"\Device\CdRom0"));
+        assert!(!classify_device(r"\Device\ImDisk0"));
+        assert!(!classify_device(""));
+        assert!(!classify_device(r"\Device\LanmanRedirector"));
+    }
+}

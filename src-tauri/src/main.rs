@@ -77,6 +77,11 @@ fn free_letters() -> Vec<String> {
 }
 
 #[tauri::command]
+fn letter_states() -> Vec<volume::LetterState> {
+    volume::letter_states()
+}
+
+#[tauri::command]
 async fn create_disk(request: imdisk::CreateRequest, folders: String, label: String, session_auto: bool) -> Result<(), String> {
     let folders = volume::parse_folders(&folders)?;
     let filesystem = request.filesystem.clone();
@@ -250,7 +255,7 @@ fn main() {
             }
         }))
                 .invoke_handler(tauri::generate_handler![
-            list_disks, memory_info, free_letters, create_disk, remove_disk, disk_properties,
+            list_disks, memory_info, free_letters, letter_states, create_disk, remove_disk, disk_properties,
             change_label, save_image, session_load, session_enable, session_disable,
             imdisk_present, install_imdisk, open_path, check_update, install_update,
         ])
