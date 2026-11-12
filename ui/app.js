@@ -6,11 +6,14 @@ const $ = (id) => document.getElementById(id);
 const table = $("disks").querySelector("tbody");
 let selected = null;
 let saving = false;
+let removing = false;
+let messageQueue = Promise.resolve();
+let createDialogGeneration = 0;
 
 function setStatus(text) { $("status").textContent = text; }
 
 function selectionButtons() {
-  const enabled = Boolean(selected) && !saving;
+  const enabled = Boolean(selected) && !saving && !removing;
   for (const id of ["btn-open", "btn-props", "btn-label", "btn-save", "btn-remove"]) {
     $(id).disabled = !enabled;
   }
@@ -29,8 +32,10 @@ function selectRow(row, disk) {
 
 // Shared message/confirm/prompt layer: themed <dialog> instead of blocking alert().
 function message(title, text, buttons = [{ label: "OK", value: true, primary: true }], input = null, rows = null) {
-  return new Promise((resolve) => {
+  const pending = messageQueue.then(() => new Promise((resolve) => {
     const dialog = $("msg-dialog");
+    // Keep results local. The DOM returnValue coerces null and booleans to strings.
+    let result = null;
     $("msg-title").textContent = title;
     const textNode = $("msg-text");
     const rowsNode = $("msg-rows");
@@ -63,21 +68,24 @@ function message(title, text, buttons = [{ label: "OK", value: true, primary: tr
       button.className = "btn" + (spec.primary ? " primary" : "");
       button.textContent = spec.label;
       button.addEventListener("click", () => {
-        dialog.close(input ? field.value.trim() : spec.value);
+        result = input && spec.value === true ? field.value.trim() : spec.value;
+        dialog.close();
       });
       actions.appendChild(button);
     }
-    dialog.addEventListener("close", () => resolve(dialog.returnValue), { once: true });
+    dialog.addEventListener("close", () => resolve(result), { once: true });
     dialog.showModal();
     (input ? field : actions.querySelector("button")).focus();
-  });
+  }));
+  messageQueue = pending.catch(() => {});
+  return pending;
 }
 
 const showMessage = (title, text) => message(title, text);
 const showRows = (title, rows) => message(title, null, undefined, null, rows);
-const showConfirm = (title, text) => message(title, text, [
+const showConfirm = (title, text, confirmLabel = "OK") => message(title, text, [
   { label: "Отмена", value: null },
-  { label: "OK", value: true, primary: true },
+  { label: confirmLabel, value: true, primary: true },
 ]);
 
 async function refresh() {
@@ -187,7 +195,7 @@ async function saveImage() {
     "Том будет заблокирован на время копирования; файлы на диске нужно закрыть.",
     [
       { label: "Отмена", value: null },
-      { label: "Сохранить", value: "ok", primary: true },
+      { label: "Сохранить", value: true, primary: true },
     ],
     { value: "", placeholder: "D:\\backup\\ram.img" },
   );
@@ -209,30 +217,52 @@ async function saveImage() {
 
 async function removeDisk() {
   const disk = selected;
-  if (!disk || saving) return;
-  let removePersistent = false;
-  if (disk.persistent) {
-    const answer = await message(
-      "Отключение диска",
-      `${disk.letter}: несохранённые данные будут потеряны. Удалить также настройку автозапуска?`,
-      [
-        { label: "Отмена", value: null },
-        { label: "Удалить диск", value: false },
-        { label: "Удалить и автозапуск", value: true, primary: true },
-      ],
-    );
-    if (answer === null || answer === undefined || answer === "") return;
-    removePersistent = answer === true;
-  } else {
-    const answer = await showConfirm("Отключение диска", `Удалить устройство ImDisk ${disk.unit} (${disk.letter})? Несохранённые данные будут потеряны.`);
-    if (!answer) return;
-  }
+  if (!disk || saving || removing) return;
+  removing = true;
+  selectionButtons();
   try {
-    await invoke("remove_disk", { unit: disk.unit, removePersistent });
+    let removePersistent = false;
+    if (disk.persistent) {
+      const answer = await message(
+        "Отключение диска",
+        `${disk.letter}: несохранённые данные будут потеряны. Удалить также настройку автозапуска?`,
+        [
+          { label: "Отмена", value: null },
+          { label: "Удалить диск", value: false },
+          { label: "Удалить и автозапуск", value: true, primary: true },
+        ],
+      );
+      if (answer === null) return;
+      removePersistent = answer === true;
+    } else {
+      const answer = await showConfirm(
+        "Отключение диска",
+        `Отключить устройство ImDisk ${disk.unit} (${disk.letter})? Несохранённые данные будут потеряны.`,
+        "Отключить",
+      );
+      if (answer !== true) return;
+    }
+    const request = { unit: disk.unit, removePersistent };
+    try {
+      await invoke("remove_disk", { ...request, force: false });
+    } catch (error) {
+      if (!error?.can_force) throw error;
+      const force = await showConfirm(
+        "Принудительное отключение",
+        `Не удалось заблокировать ${disk.letter}. Закройте открытые файлы и повторите попытку или отключите диск принудительно. Открытые файлы могут быть повреждены.`,
+        "Отключить принудительно",
+      );
+      if (force !== true) return;
+      await invoke("remove_disk", { ...request, force: true });
+    }
+    await refresh();
   } catch (error) {
-    showMessage("Ошибка", String(error));
+    showMessage("Ошибка отключения", error?.message ?? String(error));
+    await refresh();
+  } finally {
+    removing = false;
+    selectionButtons();
   }
-  refresh();
 }
 
 function fillLetters(select, extra) {
@@ -244,51 +274,60 @@ function fillLetters(select, extra) {
 }
 
 function createDialog() {
+  const dialog = $("create-dialog");
+  if (dialog.open) return;
+  createDialogGeneration += 1;
+  dialog.querySelector("button[type=submit]").disabled = false;
   fillLetters($("c-letter"));
   invoke("memory_info").then((memory) => {
     $("create-memory").textContent = memory
       ? `Свободно RAM: ${(memory.avail_bytes / 2 ** 20).toLocaleString("ru-RU", { maximumFractionDigits: 0 })} МиБ. Укажите параметры для создания диска`
       : "Укажите параметры для создания диска";
   });
-  $("create-dialog").showModal();
+  dialog.showModal();
 }
 
 async function submitCreate(event) {
   event.preventDefault();
-  if ($("c-auto").checked) {
-    const saved = await invoke("session_load");
-    if ((saved || []).some((d) => d.letter === $("c-letter").value)) {
-      const overwrite = await message(
-        "Диск при входе",
-        `Настройки для диска ${$("c-letter").value} уже сохранены. Перезаписать их новыми?`,
-        [
-          { label: "Отмена", value: null },
-          { label: "Перезаписать", value: true, primary: true },
-        ],
-      );
-      if (!overwrite) return;
-    }
-  }
+  const dialog = $("create-dialog");
+  const submit = dialog.querySelector("button[type=submit]");
+  if (!dialog.open || submit.disabled) return;
+  const generation = createDialogGeneration;
+  const stillOpen = () => dialog.open && generation === createDialogGeneration;
+  const request = {
+    letter: $("c-letter").value,
+    sizeMib: Number($("c-size").value),
+    filesystem: $("c-fs").value,
+    image: $("c-image").value.trim() || null,
+    persistent: $("c-persistent").checked,
+    allocationSize: $("c-cluster").value === "Авто" ? 0 : Number($("c-cluster").value),
+  };
+  const folders = $("c-folders").value;
+  const label = $("c-label").value.trim();
+  const sessionAuto = $("c-auto").checked;
+  submit.disabled = true;
   try {
-    await invoke("create_disk", {
-      request: {
-        letter: $("c-letter").value,
-        sizeMib: Number($("c-size").value),
-        filesystem: $("c-fs").value,
-        image: $("c-image").value.trim() || null,
-        persistent: $("c-persistent").checked,
-        allocationSize: $("c-cluster").value === "Авто" ? 0 : Number($("c-cluster").value),
-      },
-      folders: $("c-folders").value,
-      label: $("c-label").value.trim(),
-      sessionAuto: $("c-auto").checked,
-    });
-    $("create-dialog").close();
-    setStatus(`Диск ${$("c-letter").value} создан.`);
+    if (sessionAuto) {
+      const saved = await invoke("session_load");
+      if (!stillOpen()) return;
+      if (saved?.some((disk) => disk.letter === request.letter)) {
+        const overwrite = await showConfirm(
+          "Диск при входе",
+          `Настройки для диска ${request.letter} уже сохранены. Перезаписать их новыми?`,
+          "Перезаписать",
+        );
+        if (overwrite !== true || !stillOpen()) return;
+      }
+    }
+    await invoke("create_disk", { request, folders, label, sessionAuto });
+    if (stillOpen()) dialog.close();
+    setStatus(`Диск ${request.letter} создан.`);
     refresh();
   } catch (error) {
     showMessage("Ошибка создания диска", String(error));
     refresh();
+  } finally {
+    if (generation === createDialogGeneration) submit.disabled = false;
   }
 }
 
@@ -300,8 +339,8 @@ async function sessionDialog() {
   if (disks && disks.length) {
     for (const disk of disks) addSessionRow(disk);
   } else {
-    showMessage("Параметры автозапуска", "Сохранённых параметров пока нет. Создайте диск и включите запуск при входе.");
-    createDialog();
+    const openCreate = await showMessage("Параметры автозапуска", "Сохранённых параметров пока нет. Создайте диск и включите запуск при входе.");
+    if (openCreate === true) createDialog();
     return;
   }
   $("session-dialog").showModal();
@@ -401,7 +440,7 @@ async function submitLabel(event) {
 
 async function ensureImDisk() {
   if (await invoke("imdisk_present")) return;
-  if (!(await showConfirm("ImDisk не найден", "Не найден imdisk.exe. Установить драйвер ImDisk сейчас?"))) return;
+  if (await showConfirm("ImDisk не найден", "Не найден imdisk.exe. Установить драйвер ImDisk сейчас?", "Установить") !== true) return;
   setStatus("Установка ImDisk…");
   try {
     await invoke("install_imdisk");
@@ -435,10 +474,6 @@ document.addEventListener("keydown", (event) => {
 });
 
 window.__TAURI__.event.listen("session-error", (event) => showMessage("Создание диска при входе", String(event.payload)));
-window.__TAURI__.event.listen("update-progress", (event) => {
-  const percent = Number(event.payload) || 0;
-  setStatus(percent > 0 ? `Загрузка обновления: ${percent}%` : "Загрузка обновления…");
-});
 
 ensureImDisk().then(refresh).then(checkUpdate);
 
@@ -446,24 +481,22 @@ async function checkUpdate(manual = false) {
   try {
     const info = await invoke("check_update");
     if (!info) {
-      if (manual) showMessage("Обновления", "У вас последняя версия LibreRAM.");
+      if (manual) showMessage("Обновления", "Доступных обновлений нет.");
       return;
     }
-    const install = await message(
+    const open = await message(
       "Доступна новая версия",
-      `LibreRAM ${info.version} доступна для установки. Приложение закроется и запустит установщик; настройки и диски не пострадают.`,
+      `Доступна LibreRAM ${info.version}. Скачать установщик можно со страницы релизов LibreRAM на GitHub.`,
       [
         { label: "Позже", value: null },
-        { label: "Скачать и установить", value: true, primary: true },
+        { label: "Открыть страницу релизов", value: true, primary: true },
       ],
     );
-    if (!install) return;
-    setStatus("Загрузка обновления…");
+    if (open !== true) return;
     try {
-      await invoke("install_update", { url: info.msi_url });
-      setStatus("Установщик запущен.");
-    } finally {
-      if (!document.querySelector("dialog[open]")) setStatus("");
+      await invoke("open_releases");
+    } catch (error) {
+      showMessage("Обновления", String(error));
     }
   } catch (error) {
     if (manual) showMessage("Обновления", String(error));
@@ -474,7 +507,7 @@ async function checkUpdate(manual = false) {
 $("tab-settings").addEventListener("click", () => sessionDialog());
 $("tab-help").addEventListener("click", async () => {
   const check = await message(
-    "LibreRAM 0.3.18 (Tauri)",
+    "LibreRAM 0.3.20 (Tauri)",
     "Управляйте RAM-дисками через ImDisk.\n\n" +
     "Клик по строке — выбор диска; двойной клик — свойства.\n" +
     "Клавиатура: Tab к таблице, стрелки и Enter — выбор, Ctrl+, — параметры входа.\n" +
@@ -485,7 +518,7 @@ $("tab-help").addEventListener("click", async () => {
       { label: "Проверить обновления", value: true, primary: true },
     ],
   );
-  if (check) checkUpdate(true);
+  if (check === true) checkUpdate(true);
 });
 
 // Pseudo-element ✕ can't take listeners; route corner clicks to cancel.
@@ -494,7 +527,7 @@ for (const dialog of document.querySelectorAll("dialog")) {
     const box = dialog.getBoundingClientRect();
     const inCorner = event.clientX > box.right - 44 && event.clientY < box.top + 44;
     if (inCorner && event.target === dialog) {
-      dialog.close(dialog.id === "msg-dialog" ? null : "");
+      dialog.close();
     }
   });
 }

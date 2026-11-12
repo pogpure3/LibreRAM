@@ -3,11 +3,14 @@
 use serde::Serialize;
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
-use windows::Win32::Foundation::ERROR_SUCCESS;
+use windows::core::{s, w, BOOL};
+use windows::Win32::Foundation::{FreeLibrary, ERROR_SUCCESS, HMODULE};
+use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryExW, LOAD_LIBRARY_SEARCH_SYSTEM32};
 use windows::Win32::System::Registry::{RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_LOCAL_MACHINE, KEY_READ, REG_VALUE_TYPE};
 use crate::volume::{pcw, string_from, validate_label, validate_letter, wide};
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+const IMDISK_DEVICE_INACCESSIBLE: i32 = 2;
 
 #[derive(Serialize, Clone)]
 pub struct Disk {
@@ -70,16 +73,19 @@ fn fail(out: &Output, list_query: bool) -> Result<String, String> {
     Ok(out.stdout.clone())
 }
 
-pub fn disks() -> Result<Vec<Disk>, String> {
+fn disk_units() -> Result<Vec<u32>, String> {
     let out = run(&["-l", "-n"])?;
     let stdout = fail(&out, true)?;
-    let units: Vec<u32> = stdout
+    stdout
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty())
         .map(|l| l.parse::<u32>().map_err(|_| format!("Неожиданный ответ ImDisk: {stdout}")))
-        .collect::<Result<_, _>>()?;
-    let disks: Vec<Disk> = units
+        .collect()
+}
+
+pub fn disks() -> Result<Vec<Disk>, String> {
+    let disks: Vec<Disk> = disk_units()?
         .iter()
         .filter_map(|u| match parse_disk(*u) {
             Ok(disk) => Some(disk),
@@ -247,23 +253,100 @@ pub fn create(request: &CreateRequest) -> Result<(), String> {
     Ok(())
 }
 
-pub fn remove(unit: u32, remove_persistent: bool) -> Result<(), String> {
-    let unit = unit.to_string();
-    let mut args: Vec<String> = vec!["-d".into(), "-u".into(), unit.clone()];
-    if remove_persistent {
-        args.push("-P".into());
-    }
-    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let result = run(&refs).and_then(|out| fail(&out, false));
-    if result.is_err() {
-        // The ImDisk fork rejects the volume lock behind plain -d; retry forced
-        // once since the caller already confirmed data loss.
-        let mut forced: Vec<String> = vec!["-D".into(), "-u".into(), unit];
-        if remove_persistent {
-            forced.push("-P".into());
+#[derive(Debug, Serialize)]
+pub struct DetachError {
+    message: String,
+    can_force: bool,
+}
+
+impl From<String> for DetachError {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            can_force: false,
         }
-        let refs: Vec<&str> = forced.iter().map(String::as_str).collect();
-        run(&refs).and_then(|out| fail(&out, false))?;
+    }
+}
+
+fn detach_status(out: &Output, force: bool) -> Result<(), DetachError> {
+    fail(out, false)
+        .map(|_| ())
+        .map_err(|message| DetachError {
+            message,
+            can_force: !force
+                && out.code == IMDISK_DEVICE_INACCESSIBLE
+                && out.stdout.lines().last() == Some("Locking volume..."),
+        })
+}
+
+type RemoveRegistrySettings = unsafe extern "system" fn(u32) -> BOOL;
+
+struct Persistence {
+    module: HMODULE,
+    remove_settings: RemoveRegistrySettings,
+}
+
+impl Persistence {
+    fn load() -> Result<Self, String> {
+        // SAFETY: Load the ImDisk API only from the Windows system directory.
+        let module = unsafe { LoadLibraryExW(w!("imdisk.cpl"), None, LOAD_LIBRARY_SEARCH_SYSTEM32) }
+            .map_err(|e| format!("Не удалось открыть параметры автозапуска ImDisk: {e}"))?;
+        let remove_settings = unsafe { GetProcAddress(module, s!("ImDiskRemoveRegistrySettings")) };
+        let Some(remove_settings) = remove_settings else {
+            unsafe {
+                let _ = FreeLibrary(module);
+            }
+            return Err(
+                "В установленной версии ImDisk недоступно удаление параметров автозапуска.".into(),
+            );
+        };
+        // SAFETY: The named ImDisk export is BOOL WINAPI ImDiskRemoveRegistrySettings(DWORD).
+        let remove_settings = unsafe {
+            std::mem::transmute::<unsafe extern "system" fn() -> isize, RemoveRegistrySettings>(
+                remove_settings,
+            )
+        };
+        Ok(Self {
+            module,
+            remove_settings,
+        })
+    }
+
+    fn remove(&self, unit: u32) -> Result<(), String> {
+        // SAFETY: The module and its export remain loaded until self is dropped.
+        if !unsafe { (self.remove_settings)(unit) }.as_bool() || persistent_image(unit).is_some() {
+            return Err("Диск отключён, но настройка автозапуска ImDisk не удалена.".into());
+        }
+        Ok(())
+    }
+}
+
+impl Drop for Persistence {
+    fn drop(&mut self) {
+        // SAFETY: The module is owned by this instance and freed once.
+        unsafe {
+            let _ = FreeLibrary(self.module);
+        }
+    }
+}
+
+pub fn remove(unit: u32, remove_persistent: bool, force: bool) -> Result<(), DetachError> {
+    let persistence = remove_persistent.then(Persistence::load).transpose()?;
+    let mode = if force { "-D" } else { "-d" };
+    let out = run(&[mode, "-u", &unit.to_string()])?;
+    detach_status(&out, force)?;
+    if let Some(persistence) = persistence {
+        // ImDisk's -P removes settings before it tries to lock the volume.
+        let units =
+            disk_units().map_err(|e| format!("Не удалось подтвердить отключение диска: {e}"))?;
+        if units.contains(&unit) {
+            return Err(
+                "Устройство остаётся в списке ImDisk. Обновите список дисков."
+                    .to_string()
+                    .into(),
+            );
+        }
+        persistence.remove(unit)?;
     }
     Ok(())
 }
@@ -312,6 +395,19 @@ mod tests {
     #[test]
     fn missing_size_fails_closed() {
         assert!(parse_device(1, "Drive letter: R").is_err());
+    }
+
+    #[test]
+    fn force_is_offered_only_after_a_normal_lock_failure() {
+        let mut output = Output {
+            code: 2,
+            stdout: "Flushing file buffers...\r\nLocking volume...\r\n".into(),
+            stderr: "Volume is busy".into(),
+        };
+        assert!(detach_status(&output, false).unwrap_err().can_force);
+        assert!(!detach_status(&output, true).unwrap_err().can_force);
+        output.stdout.clear();
+        assert!(!detach_status(&output, false).unwrap_err().can_force);
     }
 
     #[test]

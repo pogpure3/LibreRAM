@@ -1,3 +1,5 @@
 target/
 gen/schemas/
 releases/
+node_modules/
+/src-tauri/resources/imdisk-setup/vc_redist.x64.exe

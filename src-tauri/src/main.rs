@@ -115,8 +115,14 @@ async fn create_disk(request: imdisk::CreateRequest, folders: String, label: Str
 }
 
 #[tauri::command]
-async fn remove_disk(unit: u32, remove_persistent: bool) -> Result<(), String> {
-    imdisk::remove(unit, remove_persistent)
+async fn remove_disk(
+    unit: u32,
+    remove_persistent: bool,
+    force: bool,
+) -> Result<(), imdisk::DetachError> {
+    tauri::async_runtime::spawn_blocking(move || imdisk::remove(unit, remove_persistent, force))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -169,48 +175,57 @@ async fn session_disable() -> Result<(), String> {
 
 #[tauri::command]
 fn open_path(path: String) -> Result<(), String> {
-    use windows::core::PCWSTR;
-    use windows::Win32::UI::Shell::ShellExecuteW;
-    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
     // Elevated process: only drive roots are a legitimate target for this UI.
     let bytes = path.as_bytes();
     let is_drive_root = bytes.len() == 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && matches!(bytes[2], b'\\' | b'/');
     if !is_drive_root || !std::path::Path::new(&path).is_dir() {
         return Err("Открывать можно только корень подключённого диска.".into());
     }
-    let file = crate::volume::wide(&path);
-    // SAFETY: ShellExecuteW only reads the NUL-terminated path.
-    let result = unsafe {
-        ShellExecuteW(None, PCWSTR::null(), PCWSTR(file.as_ptr()), PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL)
-    };
-    if result.0 as usize > 32 {
+    if shell_open(&path) {
         Ok(())
     } else {
         Err(format!("Не удалось открыть {}.", path))
     }
 }
 
+fn shell_open(target: &str) -> bool {
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let target = volume::wide(target);
+    // SAFETY: The NUL-terminated target stays alive for the call.
+    let result = unsafe {
+        ShellExecuteW(
+            None,
+            PCWSTR::null(),
+            volume::pcw(&target),
+            PCWSTR::null(),
+            PCWSTR::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    result.0 as isize > 32
+}
+
 #[tauri::command]
 async fn check_update() -> Result<Option<update::UpdateInfo>, String> {
-    update::check()
+    tauri::async_runtime::spawn_blocking(update::check)
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-async fn install_update(url: String, app: tauri::AppHandle) -> Result<(), String> {
-    let msi = update::download_and_install(&url, &app)?;
-    update::run_installer(&msi)?;
-    app_handle_exit();
-    Ok(())
-}
-
-// The upgrade replaces this binary; exit before msiexec touches it.
-fn app_handle_exit() {
-    if let Some(app) = TAURI_APP.get() {
-        app.exit(0);
+fn open_releases() -> Result<(), String> {
+    if shell_open(update::RELEASES_PAGE) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Не удалось открыть страницу релизов: {}",
+            update::RELEASES_PAGE
+        ))
     }
 }
-
-pub static TAURI_APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 
 #[tauri::command]
 fn imdisk_present() -> bool {
@@ -233,7 +248,8 @@ async fn install_imdisk(app: AppHandle) -> Result<(), String> {
         .creation_flags(0x08000000) // CREATE_NO_WINDOW: no console flash
         .output()
         .map_err(|e| e.to_string())?;
-    if output.status.success() && imdisk::imdisk_path().is_ok() {
+    if output.status.success() {
+        imdisk::disks().map_err(|error| format!("ImDisk установлен, но драйвер недоступен: {error}"))?;
         return Ok(());
     }
     // Surface the script's own failure line instead of a generic message.
@@ -254,13 +270,12 @@ fn main() {
                 let _ = window.set_focus();
             }
         }))
-                .invoke_handler(tauri::generate_handler![
+        .invoke_handler(tauri::generate_handler![
             list_disks, memory_info, free_letters, letter_states, create_disk, remove_disk, disk_properties,
             change_label, save_image, session_load, session_enable, session_disable,
-            imdisk_present, install_imdisk, open_path, check_update, install_update,
+            imdisk_present, install_imdisk, open_path, check_update, open_releases,
         ])
         .setup(move |app| {
-            let _ = TAURI_APP.set(app.handle().clone());
             let window = app.get_webview_window("main").unwrap();
             let open_item = MenuItem::with_id(app, "open", "Открыть LibreRAM", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;

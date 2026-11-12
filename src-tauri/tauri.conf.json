@@ -1,10 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "LibreRAM",
-  "version": "0.3.18",
+  "version": "0.3.20",
   "mainBinaryName": "LibreRAM",
   "identifier": "org.libreram.app",
   "build": {
+    "beforeBuildCommand": "powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File prepare-vc-runtime.ps1",
     "frontendDist": "../ui"
   },
   "app": {
@@ -37,6 +38,9 @@
       "resources/imdisk-setup/**/*"
     ],
     "windows": {
+      "webviewInstallMode": {
+        "type": "offlineInstaller"
+      },
       "wix": {
         "language": "ru-RU",
         "upgradeCode": "AF941449-1944-4FF5-B02C-75D2CB1E59AB"

@@ -1,178 +1,161 @@
 // SPDX-License-Identifier: GPL-2.0-only
-//! Update check + install from GitHub releases (latest .msi asset).
-use serde::Serialize;
-use tauri::Emitter;
-use std::io::Write;
-use std::os::windows::process::CommandExt;
+//! Check GitHub release metadata for a newer Windows x64 release.
+use semver::Version;
+use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
+use std::time::Duration;
 
 const RELEASES_API: &str = "https://api.github.com/repos/pogpure3/LibreRAM/releases/latest";
-const USER_AGENT: &str = "LibreRAM-updater";
+pub const RELEASES_PAGE: &str = "https://github.com/pogpure3/LibreRAM/releases";
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct UpdateInfo {
     pub version: String,
-    pub msi_url: String,
 }
 
-/// Compare dotted versions: newer(a, b) = a > b.
-fn newer(candidate: &str, current: &str) -> bool {
-    let parse = |s: &str| -> Vec<u64> {
-        s.trim_start_matches('v')
-            .split('-')
-            .next()
-            .unwrap_or("")
-            .split('.')
-            .map(|p| p.parse::<u64>().unwrap_or(0))
-            .collect()
-    };
-    let (a, b) = (parse(candidate), parse(current));
-    for i in 0..a.len().max(b.len()) {
-        match (a.get(i).copied().unwrap_or(0), b.get(i).copied().unwrap_or(0)) {
-            (x, y) if x != y => return x > y,
-            _ => {}
-        }
-    }
-    false
+#[derive(Deserialize)]
+struct Release {
+    tag_name: String,
+    draft: bool,
+    prerelease: bool,
+    assets: Vec<Asset>,
 }
 
-/// Latest published release with a newer version and a downloadable .msi.
+#[derive(Deserialize)]
+struct Asset {
+    name: String,
+    state: String,
+}
+
 pub fn check() -> Result<Option<UpdateInfo>, String> {
-    let current = env!("CARGO_PKG_VERSION");
-    let response = ureq::get(RELEASES_API)
-        .set("User-Agent", USER_AGENT)
+    let response = ureq::AgentBuilder::new()
+        .redirects(0)
+        .build()
+        .get(RELEASES_API)
+        .set("User-Agent", "LibreRAM-updater")
         .set("Accept", "application/vnd.github+json")
-        .timeout(std::time::Duration::from_secs(15))
-        .call()
-        .map_err(|e| format!("Не удалось связаться с GitHub: {e}"))?;
-    let release: serde_json::Value = response
+        .timeout(Duration::from_secs(15))
+        .call();
+    check_response(response, env!("CARGO_PKG_VERSION"))
+}
+
+fn check_response(
+    response: Result<ureq::Response, ureq::Error>,
+    current: &str,
+) -> Result<Option<UpdateInfo>, String> {
+    let response = match response {
+        Ok(response) if response.status() == 200 => response,
+        Ok(response) => {
+            return Err(format!("Неожиданный ответ GitHub: HTTP {}.", response.status()));
+        }
+        Err(ureq::Error::Status(404, _)) => return Ok(None),
+        Err(error) => return Err(format!("Не удалось связаться с GitHub: {error}")),
+    };
+    let release: Release = response
         .into_json()
-        .map_err(|e| format!("Не удалось прочитать ответ GitHub: {e}"))?;
-    if release.get("draft").map(|v| v.as_bool().unwrap_or(true)).unwrap_or(true) {
+        .map_err(|error| format!("Не удалось прочитать ответ GitHub: {error}"))?;
+    if release.draft || release.prerelease {
         return Ok(None);
     }
-    let tag = release["tag_name"].as_str().unwrap_or("");
-    let version = tag.trim_start_matches('v');
-    if !newer(version, current) {
+
+    let tag = release.tag_name.strip_prefix('v').unwrap_or(&release.tag_name);
+    let candidate = Version::parse(tag)
+        .map_err(|_| "GitHub вернул недопустимый номер версии.".to_string())?;
+    let current = Version::parse(current)
+        .map_err(|_| "Не удалось определить текущую версию LibreRAM.".to_string())?;
+    if !candidate.pre.is_empty() || candidate.cmp_precedence(&current) != Ordering::Greater {
         return Ok(None);
     }
-    let assets = release["assets"].as_array().cloned().unwrap_or_default();
-    let msi = assets
+
+    let name = format!("LibreRAM-{candidate}-preview-x64-tauri.msi");
+    let available = release
+        .assets
         .iter()
-        .filter(|a| a["name"].as_str().map(|n| n.to_lowercase().ends_with(".msi")).unwrap_or(false))
-        .min_by_key(|a| a["name"].as_str().unwrap_or("").to_lowercase())
-        .and_then(|a| a["browser_download_url"].as_str())
-        .map(str::to_string);
-    Ok(msi.map(|msi_url| UpdateInfo { version: version.to_string(), msi_url }))
-}
-
-/// Download the MSI to a temp file, then hand off to msiexec and exit the app
-/// so the upgrade does not fight its own running binary.
-pub fn download_and_install(url: &str, app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
-    let response = ureq::get(url)
-        .set("User-Agent", USER_AGENT)
-        .timeout(std::time::Duration::from_secs(600))
-        .call()
-        .map_err(|e| format!("Не удалось скачать обновление: {e}"))?;
-    let total = response
-        .header("Content-Length")
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(0);
-    let file_name = url.rsplit('/').next().unwrap_or("LibreRAM-setup.msi");
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos();
-    let temp = std::env::temp_dir().join(format!("libreram-update-{nanos}-{file_name}"));
-    // A stale file from an earlier failed run must not block create_new.
-    let _ = std::fs::remove_file(&temp);
-    let mut reader = response.into_reader();
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temp)
-        .map_err(|e| format!("Не удалось создать файл обновления: {e}"))?;
-    let mut done: u64 = 0;
-    let mut last_emit = 0u64;
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let read = reader.read(&mut buffer).map_err(|e| {
-            let _ = std::fs::remove_file(&temp);
-            format!("Загрузка прервалась: {e}")
-        })?;
-        if read == 0 {
-            break;
-        }
-        file.write_all(&buffer[..read]).map_err(|e| {
-            let _ = std::fs::remove_file(&temp);
-            format!("Загрузка прервалась: {e}")
-        })?;
-        done += read as u64;
-        // Throttle: emit at most once per percent (or at the end when the
-        // server sent no Content-Length).
-        let emit = if total == 0 {
-            done - last_emit >= 512 * 1024
-        } else {
-            done * 100 / total > last_emit
-        };
-        if emit {
-            last_emit = if total == 0 { done / (512 * 1024) } else { done * 100 / total };
-            let percent = if total == 0 { 0u64 } else { done * 100 / total };
-            app.emit("update-progress", percent).map_err(|e| e.to_string())?;
-        }
-    }
-    let _ = total;
-    Ok(temp)
-}
-
-/// Launch msiexec detached; after it finishes, the freshly installed exe starts.
-/// The app exits right after spawning, so the MajorUpgrade replaces files freely.
-pub fn run_installer(msi: &std::path::Path) -> Result<(), String> {
-    let cmd = std::path::PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()))
-        .join(r"System32\cmd.exe");
-    let target = relaunch_target();
-    // Inline `cmd /c start ... && start ...` dies on cmd's outer-quote
-    // stripping ("Windows cannot find \"); a temp .cmd sidesteps quoting.
-    let script = std::env::temp_dir().join("libreram-update.cmd");
-    std::fs::write(
-        &script,
-        format!(
-            "@echo off\r\ndel \"%~f0\" >nul 2>&1\r\nstart \"\" /wait msiexec /i \"{}\" /qb\r\nstart \"\" \"{}\"\r\n",
-            msi.to_string_lossy(),
-            target.to_string_lossy(),
-        ),
-    )
-    .map_err(|e| format!("Не удалось записать сценарий обновления: {e}"))?;
-    std::process::Command::new(cmd)
-        .args(["/c", &format!("\"{}\"", script.to_string_lossy()), msi.to_string_lossy().as_ref(), target.to_string_lossy().as_ref()])
-        .creation_flags(0x08000008) // CREATE_NO_WINDOW | CREATE_DETACHED
-        .spawn()
-        .map_err(|e| format!("Не удалось запустить установку: {e}"))?;
-    Ok(())
-}
-
-/// Where the updated copy will live: same dir for an installed copy,
-/// Program Files\LibreRAM for portable ones (MSI's default INSTALLFOLDER).
-fn relaunch_target() -> std::path::PathBuf {
-    let exe = std::env::current_exe().ok();
-    if let Some(dir) = exe.as_ref().and_then(|e| e.parent()) {
-        if crate::session::installed() {
-            return dir.join("LibreRAM.exe");
-        }
-    }
-    let pf = std::env::var("ProgramFiles").unwrap_or_else(|_| r"C:\Program Files".into());
-    std::path::PathBuf::from(pf).join(r"LibreRAM\LibreRAM.exe")
+        .any(|asset| asset.name == name && asset.state == "uploaded");
+    Ok(available.then(|| UpdateInfo {
+        version: candidate.to_string(),
+    }))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::newer;
+    use super::*;
+    use serde_json::{json, Value};
+
+    const CURRENT: &str = "0.3.18";
+
+    fn release(tag: &str) -> Value {
+        let version = tag.trim_start_matches('v');
+        json!({
+            "tag_name": tag,
+            "draft": false,
+            "prerelease": false,
+            "assets": [{
+                "name": format!("LibreRAM-{version}-preview-x64-tauri.msi"),
+                "state": "uploaded",
+                "browser_download_url": "https://example.invalid/installer.msi"
+            }]
+        })
+    }
+
+    fn check_release(release: Value) -> Result<Option<UpdateInfo>, String> {
+        check_response(ureq::Response::new(200, "OK", &release.to_string()), CURRENT)
+    }
 
     #[test]
-    fn version_compare() {
-        assert!(newer("0.3.2", "0.3.1"));
-        assert!(newer("v0.4.0", "0.3.10"));
-        assert!(newer("1.0", "0.9.9"));
-        assert!(!newer("0.3.1", "0.3.1"));
-        assert!(!newer("0.2.9", "0.3.1"));
+    fn finds_newer_release_and_returns_only_its_version() {
+        let update = check_release(release("v0.3.19")).unwrap().unwrap();
+        assert_eq!(
+            serde_json::to_value(update).unwrap(),
+            json!({ "version": "0.3.19" })
+        );
+    }
+
+    #[test]
+    fn ignores_equal_older_and_prerelease_versions() {
+        for tag in ["v0.3.18", "v0.3.9", "v0.3.19-rc.1", "v0.3.18+rebuild"] {
+            assert!(check_release(release(tag)).unwrap().is_none(), "{tag}");
+        }
+        assert_eq!(
+            check_release(release("0.3.100")).unwrap().unwrap().version,
+            "0.3.100"
+        );
+    }
+
+    #[test]
+    fn ignores_drafts_and_releases_marked_as_prerelease() {
+        for field in ["draft", "prerelease"] {
+            let mut unpublished = release("v0.3.19");
+            unpublished[field] = json!(true);
+            assert!(check_release(unpublished).unwrap().is_none(), "{field}");
+        }
+    }
+
+    #[test]
+    fn requires_uploaded_tauri_x64_msi_for_the_release_version() {
+        let mut candidate = release("v0.3.19");
+        candidate["assets"] = json!([
+            { "name": "LibreRAM-0.3.19-preview-x64-tauri.msi", "state": "starter" },
+            { "name": "LibreRAM-0.3.19-preview-arm64-tauri.msi", "state": "uploaded" },
+            { "name": "LibreRAM-0.3.18-preview-x64-tauri.msi", "state": "uploaded" }
+        ]);
+        assert!(check_release(candidate).unwrap().is_none());
+    }
+
+    #[test]
+    fn rejects_malformed_tags_and_metadata() {
+        assert!(check_release(release("v0.4.invalid")).is_err());
+        assert!(check_release(json!({ "tag_name": "v0.3.19" })).is_err());
+        assert!(check_response(ureq::Response::new(200, "OK", "invalid JSON"), CURRENT).is_err());
+    }
+
+    #[test]
+    fn distinguishes_no_release_from_github_errors() {
+        let response = ureq::Response::new(404, "Not Found", "{}").unwrap();
+        assert!(check_response(Err(ureq::Error::Status(404, response)), CURRENT)
+            .unwrap()
+            .is_none());
+        let response = ureq::Response::new(503, "Service Unavailable", "{}").unwrap();
+        assert!(check_response(Err(ureq::Error::Status(503, response)), CURRENT).is_err());
     }
 }
