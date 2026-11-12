@@ -2,6 +2,7 @@
 //! Per-user logon configuration for a new, empty session disk.
 //! Keeps the session.json format of the Python version.
 use base64::Engine;
+use crate::volume::pcw;
 use serde::{Deserialize, Serialize};
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
@@ -229,7 +230,11 @@ pub fn restore() -> Result<(), String> {
 
 fn restore_one(config: &SessionConfig) -> Result<(), String> {
     if std::path::Path::new(&format!("{}\\", config.letter)).exists() {
-        return Err(format!("Буква {} занята. Существующий диск не изменён.", config.letter));
+        // A live ImDisk disk keeps the letter; a ghost volume gets evicted.
+        if backed_by_imdisk(&config.letter) {
+            return Err(format!("Буква {} занята. Существующий диск не изменён.", config.letter));
+        }
+        clear_ghost(&config.letter)?;
     }
     let request = crate::imdisk::CreateRequest {
         letter: config.letter.clone(),
@@ -275,5 +280,37 @@ mod tests {
     fn empty_list_stays_empty() {
         let file = SessionFile::parse(r#"{"disks":[]}"#).unwrap();
         assert!(file.all().is_empty());
+    }
+}
+
+/// Is the letter held by a live ImDisk device (a real RAM disk of ours)?
+fn backed_by_imdisk(letter: &str) -> bool {
+    let target = crate::volume::wide(letter);
+    let mut buffer = [0u16; 1024];
+    // SAFETY: buffer and size match; NUL-separated device names returned.
+    let len = unsafe { windows::Win32::Storage::FileSystem::QueryDosDeviceW(pcw(&target), Some(&mut buffer)) };
+    if len == 0 {
+        return false; // no dos device: letter is free
+    }
+    let mapping = crate::imdisk::decode(&buffer[..(len as usize).min(buffer.len() - 1)]
+        .iter().flat_map(|u| u.to_le_bytes()).collect::<Vec<u8>>());
+    mapping.to_uppercase().contains("IMDISK")
+}
+
+/// A ghost volume (letter busy, no ImDisk device behind it) blocks logon
+/// creation; drop the mount point so the letter frees up.
+fn clear_ghost(letter: &str) -> Result<(), String> {
+    let cmd = std::path::PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()))
+        .join(r"System32\mountvol.exe");
+    let output = std::process::Command::new(cmd)
+        .args([letter, "/D"])
+        .creation_flags(0x08000000)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() && !backed_by_imdisk(letter) {
+        log_event(&format!("Буква {letter} освобождена от осиротевшего тома."));
+        Ok(())
+    } else {
+        Err(format!("Буква {letter} занята посторонним томом. Диск не создан."))
     }
 }
