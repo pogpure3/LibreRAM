@@ -92,13 +92,20 @@ pub fn run_installer(msi: &std::path::Path) -> Result<(), String> {
     let cmd = std::path::PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()))
         .join(r"System32\cmd.exe");
     let target = relaunch_target();
-    let script = format!(
-        "start \"\" /wait msiexec /i \"{}\" /qb&& start \"\" \"{}\"",
-        msi.to_string_lossy(),
-        target.to_string_lossy(),
-    );
+    // Inline `cmd /c start ... && start ...` dies on cmd's outer-quote
+    // stripping ("Windows cannot find \"); a temp .cmd sidesteps quoting.
+    let script = std::env::temp_dir().join("libreram-update.cmd");
+    std::fs::write(
+        &script,
+        format!(
+            "@echo off\r\ndel \"%~f0\" >nul 2>&1\r\nstart \"\" /wait msiexec /i \"{}\" /qb\r\nstart \"\" \"{}\"\r\n",
+            msi.to_string_lossy(),
+            target.to_string_lossy(),
+        ),
+    )
+    .map_err(|e| format!("Не удалось записать сценарий обновления: {e}"))?;
     std::process::Command::new(cmd)
-        .args(["/c", &script])
+        .args(["/c", &format!("\"{}\"", script.to_string_lossy()), msi.to_string_lossy().as_ref(), target.to_string_lossy().as_ref()])
         .creation_flags(0x08000008) // CREATE_NO_WINDOW | CREATE_DETACHED
         .spawn()
         .map_err(|e| format!("Не удалось запустить установку: {e}"))?;
