@@ -455,8 +455,12 @@ async function checkUpdate(manual = false) {
     );
     if (!install) return;
     setStatus("Загрузка обновления…");
-    await invoke("install_update", { url: info.msi_url });
-    setStatus("Установщик запущен.");
+    try {
+      await invoke("install_update", { url: info.msi_url });
+      setStatus("Установщик запущен.");
+    } finally {
+      if (!document.querySelector("dialog[open]")) setStatus("");
+    }
   } catch (error) {
     if (manual) showMessage("Обновления", String(error));
     // silent on startup: no network / rate limit must not nag
@@ -466,7 +470,7 @@ async function checkUpdate(manual = false) {
 $("tab-settings").addEventListener("click", () => sessionDialog());
 $("tab-help").addEventListener("click", async () => {
   const check = await message(
-    "LibreRAM 0.3.16 (Tauri)",
+    "LibreRAM 0.3.17 (Tauri)",
     "Управляйте RAM-дисками через ImDisk.\n\n" +
     "Клик по строке — выбор диска; двойной клик — свойства.\n" +
     "Клавиатура: Tab к таблице, стрелки и Enter — выбор, Ctrl+, — параметры входа.\n" +

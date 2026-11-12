@@ -72,7 +72,13 @@ pub fn download_and_install(url: &str) -> Result<std::path::PathBuf, String> {
         .call()
         .map_err(|e| format!("Не удалось скачать обновление: {e}"))?;
     let file_name = url.rsplit('/').next().unwrap_or("LibreRAM-setup.msi");
-    let temp = std::env::temp_dir().join(format!("libreram-update-{file_name}"));
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos();
+    let temp = std::env::temp_dir().join(format!("libreram-update-{nanos}-{file_name}"));
+    // A stale file from an earlier failed run must not block create_new.
+    let _ = std::fs::remove_file(&temp);
     let mut reader = response.into_reader();
     let mut file = std::fs::OpenOptions::new()
         .write(true)
