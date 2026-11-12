@@ -220,6 +220,7 @@ pub struct LetterState {
 pub fn classify_device(mapping: &str) -> bool {
     let upper = mapping.to_uppercase();
     upper.contains("HARDDISKVOLUME") || upper.contains("CDROM") || upper.contains("FLOPPY")
+        || upper.contains("LANMAN") || upper.contains("WEBDAV") || upper.contains("MUP")
 }
 
 /// Every letter A-Z with a blocked flag: physical media can't be configured
@@ -258,6 +259,8 @@ mod tests2 {
         assert!(classify_device(r"\Device\CdRom0"));
         assert!(!classify_device(r"\Device\ImDisk0"));
         assert!(!classify_device(""));
-        assert!(!classify_device(r"\Device\LanmanRedirector"));
+        assert!(classify_device(r"\Device\LanmanRedirector"));
+        assert!(classify_device(r"\Device\Mup"));
+        assert!(classify_device(r"\Device\WebDavRedirector"));
     }
 }
