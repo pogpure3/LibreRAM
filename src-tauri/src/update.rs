@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //! Update check + install from GitHub releases (latest .msi asset).
 use serde::Serialize;
+use tauri::Emitter;
+use std::io::Write;
 use std::os::windows::process::CommandExt;
 
 const RELEASES_API: &str = "https://api.github.com/repos/pogpure3/LibreRAM/releases/latest";
@@ -65,12 +67,16 @@ pub fn check() -> Result<Option<UpdateInfo>, String> {
 
 /// Download the MSI to a temp file, then hand off to msiexec and exit the app
 /// so the upgrade does not fight its own running binary.
-pub fn download_and_install(url: &str) -> Result<std::path::PathBuf, String> {
+pub fn download_and_install(url: &str, app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let response = ureq::get(url)
         .set("User-Agent", USER_AGENT)
         .timeout(std::time::Duration::from_secs(600))
         .call()
         .map_err(|e| format!("Не удалось скачать обновление: {e}"))?;
+    let total = response
+        .header("Content-Length")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
     let file_name = url.rsplit('/').next().unwrap_or("LibreRAM-setup.msi");
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -85,10 +91,36 @@ pub fn download_and_install(url: &str) -> Result<std::path::PathBuf, String> {
         .create_new(true)
         .open(&temp)
         .map_err(|e| format!("Не удалось создать файл обновления: {e}"))?;
-    std::io::copy(&mut reader, &mut file).map_err(|e| {
-        let _ = std::fs::remove_file(&temp);
-        format!("Загрузка прервалась: {e}")
-    })?;
+    let mut done: u64 = 0;
+    let mut last_emit = 0u64;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = reader.read(&mut buffer).map_err(|e| {
+            let _ = std::fs::remove_file(&temp);
+            format!("Загрузка прервалась: {e}")
+        })?;
+        if read == 0 {
+            break;
+        }
+        file.write_all(&buffer[..read]).map_err(|e| {
+            let _ = std::fs::remove_file(&temp);
+            format!("Загрузка прервалась: {e}")
+        })?;
+        done += read as u64;
+        // Throttle: emit at most once per percent (or at the end when the
+        // server sent no Content-Length).
+        let emit = if total == 0 {
+            done - last_emit >= 512 * 1024
+        } else {
+            done * 100 / total > last_emit
+        };
+        if emit {
+            last_emit = if total == 0 { done / (512 * 1024) } else { done * 100 / total };
+            let percent = if total == 0 { 0u64 } else { done * 100 / total };
+            app.emit("update-progress", percent).map_err(|e| e.to_string())?;
+        }
+    }
+    let _ = total;
     Ok(temp)
 }
 

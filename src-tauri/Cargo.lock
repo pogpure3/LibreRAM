@@ -1946,7 +1946,7 @@ dependencies = [
 
 [[package]]
 name = "libreram"
-version = "0.3.17"
+version = "0.3.18"
 dependencies = [
  "base64 0.22.1",
  "serde",

@@ -196,8 +196,8 @@ async fn check_update() -> Result<Option<update::UpdateInfo>, String> {
 }
 
 #[tauri::command]
-async fn install_update(url: String) -> Result<(), String> {
-    let msi = update::download_and_install(&url)?;
+async fn install_update(url: String, app: tauri::AppHandle) -> Result<(), String> {
+    let msi = update::download_and_install(&url, &app)?;
     update::run_installer(&msi)?;
     app_handle_exit();
     Ok(())
